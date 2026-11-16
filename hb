@@ -1286,8 +1286,18 @@ cmd_up() {
   ok "可见 $n 个节点"
 
   say "⑤ 连通性自检"
-  local h out line got=0
-  for h in 100.64.0.5 100.67.55.35; do
+  # 目标取自别名表（最多前两个）：公开版没有"预设主机"，硬编码只会指向别人的机器。
+  # 一个别名都没有就跳过 —— 那不是故障，是还没配。
+  local h out line got=0 targets=()
+  while read -r _n _t _rest; do
+    [ -n "$_n" ] || continue
+    case "$_t" in [0-9]*.[0-9]*) targets+=("$_t") ;; esac
+    [ ${#targets[@]} -ge 2 ] && break
+  done < <(hosts_all 2>/dev/null)
+  if [ ${#targets[@]} -eq 0 ]; then
+    warn "没有可测的对端（别名表为空）—— 跳过；加一个：$SELF hosts add <名字> <IP>"
+  fi
+  for h in ${targets[@]+"${targets[@]}"}; do
     got=0
     for i in 1 2 3; do
       out=$(timeout 20 "${TS[@]}" ping -c 2 "$h" 2>&1)
@@ -2893,7 +2903,7 @@ except Exception: print("")' "${base#*//}" 2>/dev/null | tr -d '\r')
     #      经常把在线节点写成 "-"（没有活跃会话），于是整张表被滤空，报"没人能代验"
     #      —— 又一次假阴性。这里直接用 status --json 的 Online 字段。
     #   ② 账号要走 host_ssh_target（别名和 user= 记在 hosts 文件里），
-    #      不然会拼出 "@100.108.73.56" 这种必然失败的地址。
+    #      不然会拼出 "@100.64.0.9" 这种必然失败的地址。
     #   ③ Funnel 边缘挂载要几十秒，一次不成不代表不通 —— 少量重试，别急着下结论。
     _enroll_peer_code() {
       local nm ip tgt out u try
@@ -3161,7 +3171,7 @@ _peer_list() {
   # 它的节点名是 desktop-box-4，而账号是 box。
   local self_ip; self_ip=$(tailscale_ip_of)
   # 整行过滤 offline，不只看状态列。踩过的原话长这样：
-  #   100.64.0.5  desktop-box-4   singularity23187@  windows  active; relay "sin"; offline, last seen 12m ago
+  #   100.64.0.5  desktop-box-4   me@example.com     windows  active; relay "sin"; offline, last seen 12m ago
   # 第 5 列是 "active;"（因为它指的是"有过活跃连接尝试"），于是关机的机器
   # 被算成在线，后面每台都要等一次 ConnectTimeout，最后报"一台也没取到"。
   "${TS[@]}" status 2>/dev/null | tr -d '\r' | awk '/^100\./ && $0 !~ /offline/ {print $1, $2, $5}' \

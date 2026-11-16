@@ -27,7 +27,7 @@ _peer_list() {
   # 它的节点名是 desktop-box-4，而账号是 box。
   local self_ip; self_ip=$(tailscale_ip_of)
   # 整行过滤 offline，不只看状态列。踩过的原话长这样：
-  #   100.64.0.5  desktop-box-4   singularity23187@  windows  active; relay "sin"; offline, last seen 12m ago
+  #   100.64.0.5  desktop-box-4   me@example.com     windows  active; relay "sin"; offline, last seen 12m ago
   # 第 5 列是 "active;"（因为它指的是"有过活跃连接尝试"），于是关机的机器
   # 被算成在线，后面每台都要等一次 ConnectTimeout，最后报"一台也没取到"。
   "${TS[@]}" status 2>/dev/null | tr -d '\r' | awk '/^100\./ && $0 !~ /offline/ {print $1, $2, $5}' \

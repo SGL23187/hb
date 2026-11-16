@@ -559,7 +559,7 @@ except Exception: print("")' "${base#*//}" 2>/dev/null | tr -d '\r')
     #      经常把在线节点写成 "-"（没有活跃会话），于是整张表被滤空，报"没人能代验"
     #      —— 又一次假阴性。这里直接用 status --json 的 Online 字段。
     #   ② 账号要走 host_ssh_target（别名和 user= 记在 hosts 文件里），
-    #      不然会拼出 "@100.108.73.56" 这种必然失败的地址。
+    #      不然会拼出 "@100.64.0.9" 这种必然失败的地址。
     #   ③ Funnel 边缘挂载要几十秒，一次不成不代表不通 —— 少量重试，别急着下结论。
     _enroll_peer_code() {
       local nm ip tgt out u try

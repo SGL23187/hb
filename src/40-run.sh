@@ -225,8 +225,18 @@ cmd_up() {
   ok "可见 $n 个节点"
 
   say "⑤ 连通性自检"
-  local h out line got=0
-  for h in 100.64.0.5 100.67.55.35; do
+  # 目标取自别名表（最多前两个）：公开版没有"预设主机"，硬编码只会指向别人的机器。
+  # 一个别名都没有就跳过 —— 那不是故障，是还没配。
+  local h out line got=0 targets=()
+  while read -r _n _t _rest; do
+    [ -n "$_n" ] || continue
+    case "$_t" in [0-9]*.[0-9]*) targets+=("$_t") ;; esac
+    [ ${#targets[@]} -ge 2 ] && break
+  done < <(hosts_all 2>/dev/null)
+  if [ ${#targets[@]} -eq 0 ]; then
+    warn "没有可测的对端（别名表为空）—— 跳过；加一个：$SELF hosts add <名字> <IP>"
+  fi
+  for h in ${targets[@]+"${targets[@]}"}; do
     got=0
     for i in 1 2 3; do
       out=$(timeout 20 "${TS[@]}" ping -c 2 "$h" 2>&1)
