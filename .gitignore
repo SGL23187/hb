@@ -1,0 +1,15 @@
+# 本机数据：绝不进仓库
+hosts
+credentials.json
+credentials.tmp
+credentials
+authkey
+hb_key
+hb_key.enc
+.git-credentials
+vendor/
+
+# 构建副产物
+hb.bak-*
+hb.bak.*
+*.log
