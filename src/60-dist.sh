@@ -7,7 +7,7 @@
 #
 # 上一版是反的：lend 调 enroll。于是「能力」里塞着整条业务流，而 enroll 对 lend
 # 一无所知 —— 第一次接手的人只能按字面挑「加设备」，拿到随本机名走的链接
-# （实测发出 desktop-sgl-4…，机器一改名就死）。方向反了，discoverability 就没救。
+# （实测发出 desktop-box-4…，机器一改名就死）。方向反了，discoverability 就没救。
 _dist_serve() {
   local port=8890 timeout=900 no_funnel=0 script=""
   local -a extras=()
@@ -442,7 +442,7 @@ PY
     return 1
   }
   # funnel 模式绑 127.0.0.1 就够（tailscaled 从本机代理进来）。
-  # --no-funnel 必须绑 0.0.0.0 —— 2026-11-03 在 sgl 实测：绑 127.0.0.1 时，
+  # --no-funnel 必须绑 0.0.0.0 —— 2026-11-03 在 box 实测：绑 127.0.0.1 时，
   # 打印出去的 http://100.x.y.z:port 连本机自己都连不上（curl 7，
   # netstat 只有 127.0.0.1:8890 LISTENING），而界面上看不出任何异常。
   local bind=127.0.0.1 i
@@ -541,7 +541,7 @@ PY
     printf '%s' "$base" > "$tmpd/base_url"
     # 本机 DNS 若把这个域名解析进 198.18.0.0/15（Clash / Mihomo 的 fake-ip 段），
     # 本机自测**永远**拿不到 200：TUN 先本地 accept、再向上游拨，TLS 当场断。
-    # 2026-11-16 实测：desktop-sgl-4…ts.net → 198.18.0.116，000，白等 45 轮 ≈ 5 分钟，
+    # 2026-11-16 实测：desktop-box-4…ts.net → 198.18.0.116，000，白等 45 轮 ≈ 5 分钟，
     # 而且那句"本机自测取不到"会让人以为服务坏了 —— 判据错了，不是环境坏了。
     # 现在的口径：能自测才自测；不能就借网内一台节点验；都验不了就明说"给不出判据"。
     local hij=""

@@ -7,7 +7,7 @@ net_up() {
   # 1055 只在「本机自己走 SOCKS 出去」时才必须有。判据落在 ssh 配置上，
   # 不落在平台上 —— Windows 侧 ssh 直连 tailnet，config 里没有 ProxyCommand，
   # 本来就不该有 1055。旧写法硬卡 1055，于是 net_up 在 Windows 上恒为假：
-  # 2026-11-03 在 sgl 实测，enroll 每次先白跑一遍 hb up，多花 60 秒，
+  # 2026-11-03 在 box 实测，enroll 每次先白跑一遍 hb up，多花 60 秒，
   # 而网络其实一点问题没有（§8.4：别把「某台机器该不该做」写成判据）。
   if grep -qs -- "$SOCKS" "${HOME}/.ssh/config"; then
     port_open 127.0.0.1 1055 5 || return 1
@@ -17,7 +17,7 @@ net_up() {
 
 # 进程活着 ≠ 与协调服务器连着。
 # 2026-11-03 实测：tailscaled 连续跑了两天，到 controlplane 的 TCP 早已死掉，
-# netmap 停在「只有本机 1 个节点」，sgl / jetson27 全部不可达；而 ② 段只判
+# netmap 停在「只有本机 1 个节点」，box / peer-b 全部不可达；而 ② 段只判
 # pgrep，看见「已在运行」就跳过 —— 用户体感是「hb up 跑完了，还是连不上」。
 # 判据必须落在后端自述上（BackendState + Health），不能落在进程存在性上。
 ts_coord_ok() {
@@ -54,7 +54,7 @@ ts_system_mode() {
   [ "$(id -u 2>/dev/null)" = 0 ] || return 1
   [ -e /dev/net/tun ] || return 1
   command -v systemctl >/dev/null 2>&1 || return 1
-  # 已有用户态 daemon 在跑就别再起一个：两个 daemon 抢 1055 是 sgl 上踩过的坑，
+  # 已有用户态 daemon 在跑就别再起一个：两个 daemon 抢 1055 是 box 上踩过的坑，
   # 症状是"服务看着好好的，但短链/SSH 全是 000"。
   pgrep -f 'tailscaled.*--tun=userspace' >/dev/null 2>&1 && return 1
   return 0

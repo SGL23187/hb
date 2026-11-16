@@ -118,7 +118,7 @@ cmd_vendor() {
 }
 
 
-# 借道：沙箱直连 GitHub 会间歇性被掐，用 ssh -L 借 sgl 上的 Clash。
+# 借道：沙箱直连 GitHub 会间歇性被掐，用 ssh -L 借 box 上的 Clash。
 # 手动排障用：只建隧道，不碰仓库。
 
 # ── 拉仓库：把「借道 + 凭据」收成一条 ──────────────────────────────
@@ -161,7 +161,7 @@ hb_diagnose() {
             if port_open "$host" 22 5; then
               # 22 端口在听就等于 sshd 在跑。这时候再报「SSH 服务没在听」是自相矛盾，
               # 而且把排查方向指反了 —— 2026-11-16 实测：那台 Jetson 的账号是 root，
-              # hb 默认拿当前用户名（sgl）去登，回 Permission denied，却被诊断成
+              # hb 默认拿当前用户名（box）去登，回 Permission denied，却被诊断成
               # 「SSH 服务没在听」，下一步该看账号还是看 sshd，屏幕上一个字都没说。
               printf '  %-20s %s\n' "网络到 $host" "通；22 端口在听 → 问题在认证（账号/公钥），不是服务没起"
               echo "    常见原因：这台机器上没有这个账号（JetPack 镜像常是 root / ubuntu），或公钥没埋进去"
@@ -221,9 +221,9 @@ cmd_list() {
 
   # 本机 IP 直接问 tailscale ip -4，不从 status 文本里猜。
   # 旧写法拿 hostname 去匹配 status 第二列：沙箱上 Self 恰好排第一行还能蒙对，
-  # sgl 上它排第六行，而 status 里叫 desktop-sgl-4、hostname 是 DESKTOP-SGL，
+  # box 上它排第六行，而 status 里叫 desktop-box-4、hostname 是 DESKTOP-SGL，
   # 匹配不上就回落到「最后一行的 IP」—— 于是把 yahboom8 当成自己，
-  # 真正的 sgl 被列成「对端 offline」，整屏都是假的。
+  # 真正的 box 被列成「对端 offline」，整屏都是假的。
   local node_ip="" tsraw line p_ip p_name p_st p_seen
   node_ip=$("${TS[@]}" ip -4 2>/dev/null | head -1 | tr -d '\r')
   tsraw=$("${TS[@]}" status 2>/dev/null | tr -d '\r')
@@ -257,7 +257,7 @@ cmd_list() {
   # 写法：先存进变量再 case 匹配；`cmd 2>&1 | grep -q pong && p=1` 在 pipefail 下
   # 会静默判 0（实测），那正是上一版把在线节点全标成离线的元凶。
   # ping 两端都做：Windows 的 `tailscale ping` 同样可用，之前跳过了，
-  # 于是 sgl 上的 list 永远不区分"在线"和"在线但不可达"。
+  # 于是 box 上的 list 永远不区分"在线"和"在线但不可达"。
   if true; then
     local peers2="" pout
     while IFS='|' read -r p_ip p_name p_st p_seen; do
@@ -279,12 +279,12 @@ cmd_list() {
   # 顺带覆盖"git 拿空值"这种隐形状��（缓存对象说读得到，实际读不到）。
   if [ $cred -eq 1 ] && _git_sees_credential; then creds_store=1; fi
 
-  # ssh 探针放后台，和下面的 ping 并行。sgl 的 sshd 每次登录要起 PowerShell 并加载
+  # ssh 探针放后台，和下面的 ping 并行。box 的 sshd 每次登录要起 PowerShell 并加载
   # profile，实测 6~9s（链路走 relay 更慢），串行叠在 ping 上 list 就要 9s ——
   # 一条"看一眼"的命令不该让人等这么久。
   local sshpid=""
   if [ $socks -eq 1 ] && ! is_windows; then
-    timeout 20 ssh -o BatchMode=yes -o ConnectTimeout=8 sgl "exit 0" >/dev/null 2>&1 &
+    timeout 20 ssh -o BatchMode=yes -o ConnectTimeout=8 box "exit 0" >/dev/null 2>&1 &
     sshpid=$!
   fi
 
@@ -315,7 +315,7 @@ cmd_list() {
     local role; if is_windows; then role=win; else role=sandbox; fi
     jb() { [ "$1" = "1" ] && printf 'true' || printf 'false'; }
     # 不适用的项给 null，不给 false —— false 是"坏了"，null 是"这里不涉及"。
-    # 只有两项属于"本机自己不用"：socks1055（本机不绕自己）、sgl_ssh（本机就是它）。
+    # 只有两项属于"本机自己不用"：socks1055（本机不绕自己）、default_ssh（本机就是它）。
     # 私钥 / git 凭据两端都要，一律给布尔 —— 别再用 role 去猜。
     js() { if is_windows; then printf 'null'; else printf '%s' "$(jb "$1")"; fi; }
     printf '{\n'
@@ -371,7 +371,7 @@ cmd_list() {
     if [ $creds_store -eq 1 ]; then ok "git 凭据可用（store 生效）"
     elif [ $cred -eq 1 ]; then bad "git 凭据文件在，但 helper 读不到 → $SELF up"
     else bad "无 git 凭据 → $SELF up"; fi
-    [ $sshok -eq 1 ] && ok "ssh sgl 通" || bad "ssh sgl 不通 → $SELF up"
+    [ $sshok -eq 1 ] && ok "ssh box 通" || bad "ssh box 不通 → $SELF up"
   fi
 
   echo
@@ -401,7 +401,7 @@ cmd_list() {
   return $rc
 }
 
-# ── 两端自证：本地 hb / AGENTS.md 与 sgl 上那份是不是同一份 ─────────
+# ── 两端自证：本地 hb / AGENTS.md 与 box 上那份是不是同一份 ─────────
 # 为什么值得单独一条命令：换沙箱后最高频的动作之一就是「核对两端脚本同版」。
 # 手工做要拼 ssh + 中文目录 + 至少两层引号，实测会一路退到 base64、
 # 再退到 UTF-16LE EncodedCommand，四轮才成 —— 而每一轮失败都长得像别的问题。
@@ -416,7 +416,7 @@ cmd_list() {
 # 三条边界，都是实测出来的：
 #   · 域名跟节点走，不跟帽子走。同一时刻只有一台能叫 hb-hub，第二台会拿到
 #     hb-hub-1。所以「戴上时域名固定、摘下后还原」是能做到的最接近的效果。
-#   · 改名不会断现有连接（实测：改名后 ssh sgl 照常回 OK），所以随时可戴可摘。
+#   · 改名不会断现有连接（实测：改名后 ssh box 照常回 OK），所以随时可戴可摘。
 #   · funnel 配置绑的是「改名那一刻的域名」。改名后旧配置还在、旧域名还能通，
 #     看起来一切正常其实是个幽灵 —— 所以戴上时必须先 funnel reset。
 _HUB_NAME="hb-hub"
@@ -573,8 +573,8 @@ cmd_lend() {
     "${TS[@]}" set --hostname="$orig" >/dev/null 2>&1
     rm -f "$_HUB_STATE"
     # 改完立刻报「已还原」是撒谎：prefs 变了，协调面到 status 还有延迟。
-    # 2026-11-16 实测：prefs 已经是 desktop-sgl-4，status --json 仍回 hb-hub，
-    # 而屏幕已经打出「名字还原为 desktop-sgl-4」—— 下一个人去 hb list 会当场懵。
+    # 2026-11-16 实测：prefs 已经是 desktop-box-4，status --json 仍回 hb-hub，
+    # 而屏幕已经打出「名字还原为 desktop-box-4」—— 下一个人去 hb list 会当场懵。
     # 判据改成「status 里真的是原名」，最多等 12 秒，超时就明说，不假装成功。
     local i dn=""
     for i in 1 2 3 4 5 6; do

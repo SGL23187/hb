@@ -137,7 +137,7 @@ fi
 # 端口探针：**不要再用 `nc -z`**。
 # MSYS（Git Bash）根本没装 nc，`nc -z ... 2>/dev/null` 会静默失败 —— 于是
 # "端口在监听"被报成"未监听"。2026-11-14 现场咬到：hb proxy 假报未监听，
-# 连带 1055 端口的几处检查全部假阴性，人差点去动 sgl 上的 Clash。
+# 连带 1055 端口的几处检查全部假阴性，人差点去动 box 上的 Clash。
 #
 # 三级降级，全部零依赖：
 #   ① bash 内建 /dev/tcp（我们的目标机都有 bash，最快）
@@ -180,7 +180,7 @@ net_up() {
   # 1055 只在「本机自己走 SOCKS 出去」时才必须有。判据落在 ssh 配置上，
   # 不落在平台上 —— Windows 侧 ssh 直连 tailnet，config 里没有 ProxyCommand，
   # 本来就不该有 1055。旧写法硬卡 1055，于是 net_up 在 Windows 上恒为假：
-  # 2026-11-03 在 sgl 实测，enroll 每次先白跑一遍 hb up，多花 60 秒，
+  # 2026-11-03 在 box 实测，enroll 每次先白跑一遍 hb up，多花 60 秒，
   # 而网络其实一点问题没有（§8.4：别把「某台机器该不该做」写成判据）。
   if grep -qs -- "$SOCKS" "${HOME}/.ssh/config"; then
     port_open 127.0.0.1 1055 5 || return 1
@@ -190,7 +190,7 @@ net_up() {
 
 # 进程活着 ≠ 与协调服务器连着。
 # 2026-11-03 实测：tailscaled 连续跑了两天，到 controlplane 的 TCP 早已死掉，
-# netmap 停在「只有本机 1 个节点」，sgl / jetson27 全部不可达；而 ② 段只判
+# netmap 停在「只有本机 1 个节点」，box / peer-b 全部不可达；而 ② 段只判
 # pgrep，看见「已在运行」就跳过 —— 用户体感是「hb up 跑完了，还是连不上」。
 # 判据必须落在后端自述上（BackendState + Health），不能落在进程存在性上。
 ts_coord_ok() {
@@ -227,7 +227,7 @@ ts_system_mode() {
   [ "$(id -u 2>/dev/null)" = 0 ] || return 1
   [ -e /dev/net/tun ] || return 1
   command -v systemctl >/dev/null 2>&1 || return 1
-  # 已有用户态 daemon 在跑就别再起一个：两个 daemon 抢 1055 是 sgl 上踩过的坑，
+  # 已有用户态 daemon 在跑就别再起一个：两个 daemon 抢 1055 是 box 上踩过的坑，
   # 症状是"服务看着好好的，但短链/SSH 全是 000"。
   pgrep -f 'tailscaled.*--tun=userspace' >/dev/null 2>&1 && return 1
   return 0
@@ -552,7 +552,7 @@ ensure_ssh_conf() {
 #   · 新机器 C 上来，谁也连不进去，而 hb 自己诊断成"网络不通"
 # Jetson 实测就是这个：端口通、banner 出来、四五个账号全 Permission denied。
 #
-# 集中式（所有人写一个 sgl 的 authorized_keys）不行：sgl 一关，全网失联，
+# 集中式（所有人写一个 box 的 authorized_keys）不行：box 一关，全网失联，
 # 而且每加一台机器都要去改那台。改成**每台机器各自持有一份"谁可以进来"**，
 # 名单靠 hb 自己传播（见 hb sync-keys）：
 #   · 戴帽子那台 = 分发者：注册时它在，新机器缺什么它就给
@@ -598,7 +598,7 @@ _authkeys_merge() {
 ensure_ssh() {
   mkdir -p "$SSH_DIR"; chmod 700 "$SSH_DIR"
 
-  # ① 私钥：已有 → 任一来源恢复 → 报错（不生成新的，新钥 sgl 不认）
+  # ① 私钥：已有 → 任一来源恢复 → 报错（不生成新的，新钥 box 不认）
   local key="$SSH_DIR/$SSH_KEY_NAME" src
   if [ ! -s "$key" ]; then
     if src=$(hb_key_path); then
@@ -639,12 +639,12 @@ ensure_ssh() {
 
 # ══ 子命令表：唯一的"哪些词已经被占"的真相 ══════════════════════════
 # 为什么要有一张表，而不是散在 case 里：机器别名必须**不能落在**这些词上
-# （否则 `hb sgl "ls"` 与 `hb status` 谁优先就成了运气问题）。
+# （否则 `hb box "ls"` 与 `hb status` 谁优先就成了运气问题）。
 # 表里加一个词，别名那边自动就避让了 —— 这是它们唯一的耦合点。
 HB_SUBCMDS="list status doctor up run ts vendor sync-keys hosts enroll lend route put get help"
 
-# 别名文件：本机私有，不进 git、不进载荷。一行 `sgl 100.113.237.37`
-# 第一行是默认主机（hb sgl "..." 里的 sgl 就到它）。
+# 别名文件：本机私有，不进 git、不进载荷。一行 `box 100.64.0.5`
+# 第一行是默认主机（hb box "..." 里的 box 就到它）。
 HOSTS_FILE="${HB_HOSTS_FILE:-$HB_STATE_DIR/hosts}"
 
 # 一个名字能不能安全地当机器别名：
@@ -675,12 +675,12 @@ hosts_resolve() {
   printf '%s' "${hit:-$n}"
 }
 
-# 别名里显式写的账号（`sgl 100.113.237.37 user=sgl` 的第三段）
+# 别名里显式写的账号（`box 100.64.0.5 user=box` 的第三段）
 hosts_user() {
   hosts_all | awk -v n="$1" '$1==n{for(i=3;i<=NF;i++) if ($i ~ /^user=/) { sub(/^user=/,"",$i); print $i; exit }}'
 }
 
-# 一个 IP 该怎么登：先看 config 里 HostName 匹配的那条，再看 sgl 约定
+# 一个 IP 该怎么登：先看 config 里 HostName 匹配的那条，再看 box 约定
 _ssh_user_for() {
   local ip=$1 u=""
   # 逐行：进入 Host 块后看 HostName 是否等于 ip，是就记下这个块里的 User，
@@ -701,7 +701,7 @@ cmd_hosts() {
       local name=$2 target=$3
       # 把后面几段一并收进 target：`hosts add ubuntu 100.88.99.106 user=root`
       # 的 user=root 是第 4 个参数，只取 $3 等于直接把它丢了 ——
-      # 打印"登录账号：sgl"时人会以为自己看错，其实是根本没读到 root。
+      # 打印"登录账号：box"时人会以为自己看错，其实是根本没读到 root。
       if [ $# -gt 3 ]; then
         shift 2
         target="$*"
@@ -711,7 +711,7 @@ cmd_hosts() {
       fi
       if ! alias_usable "$name"; then
         bad "「$name」不能用作机器别名"
-        case " $HB_SUBCMDS " in *" $name "*) echo "    它已经是子命令。换一个名字，例如 sgl2 / sglbox。";; esac
+        case " $HB_SUBCMDS " in *" $name "*) echo "    它已经是子命令。换一个名字，例如 box2 / boxlab。";; esac
         echo "    规则：不与子命令重名、不含空白或引号、不以 - 开头。"
         return 2
       fi
@@ -724,9 +724,9 @@ cmd_hosts() {
       # "Permission denied"，看着像密钥没授权。
       #
       # 2026-11-09 实测：`hb hosts add ubuntu 100.88.99.106 user=root` 打印了
-      # "登录账号：root"，落盘的却是 `100.88.99.106 user=sgl` —— 因为 user=
+      # "登录账号：root"，落盘的却是 `100.88.99.106 user=box` —— 因为 user=
       # 是在这条 IP 判据之后才被看的，此处重写了一遍 target，把人家写的参数吃掉，
-      # 然后拿 _ssh_user_for 的兜底值 sgl 顶上去。现在先解析 user=，再补默认。
+      # 然后拿 _ssh_user_for 的兜底值 box 顶上去。现在先解析 user=，再补默认。
       local ip="${target%% *}" own_user=""
       case " $target " in *" user="*) own_user="${target#*user=}"; own_user="${own_user%% *}" ;; esac
       if printf '%s' "$ip" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
@@ -770,7 +770,7 @@ cmd_hosts() {
       ;;
     ""|list)
       if [ ! -s "$HOSTS_FILE" ]; then
-        echo "  （没有机器别名。加一个：$SELF hosts add sgl 100.113.237.37）"
+        echo "  （没有机器别名。加一个：$SELF hosts add box 100.64.0.5）"
         echo "  没有别名时，hb 也会认 ~/.ssh/config 里的 Host 和网内的节点名。"
         return 0
       fi
@@ -779,7 +779,7 @@ cmd_hosts() {
       while read -r n t; do
         [ -z "$n" ] && continue
         note=""
-        [ $first -eq 1 ] && { note="  ← 默认（$SELF sgl 等同于 $SELF $n）"; first=0; }
+        [ $first -eq 1 ] && { note="  ← 默认（$SELF box 等同于 $SELF $n）"; first=0; }
         if ! alias_usable "$n"; then note="$note  ✗ 与子命令重名，会被忽略"; fi
         printf '  %-10s → %-16s%s\n' "$n" "$t" "$note"
       done <<< "$(hosts_all)"
@@ -790,7 +790,7 @@ cmd_hosts() {
 }
 
 # 调过一次就记住它。规则只有一条：**同名不覆盖、默认位只有一次**。
-# 第一台调到的机器记为 sgl（`hb sgl "…"` 的默认指向），之后各自用节点名。
+# 第一台调到的机器记为 box（`hb box "…"` 的默认指向），之后各自用节点名。
 hosts_remember() {
   local n=$1 ip=$2
   [ -z "$n" ] || [ -z "$ip" ] && return 0
@@ -804,9 +804,9 @@ hosts_remember() {
   hosts_all | awk -v ip="$ip" '{for(i=2;i<=NF;i++) if($i==ip) f=1} END{exit !f}' && return 0
   local first=""
   first=$(hosts_all | head -1 | awk '{print $1}')
-  if [ -z "$first" ] && ! hosts_all | awk '$1=="sgl"{f=1} END{exit !f}'; then
-    printf 'sgl %s user=%s\n' "$ip" "$(_ssh_user_for "$ip")" >> "$HOSTS_FILE"
-    printf '  \033[2m# 记住了这台：以后 hb sgl "…" 就指它（要改指向：hb hosts add sgl <IP>）\033[0m\n' >&2
+  if [ -z "$first" ] && ! hosts_all | awk '$1=="box"{f=1} END{exit !f}'; then
+    printf 'box %s user=%s\n' "$ip" "$(_ssh_user_for "$ip")" >> "$HOSTS_FILE"
+    printf '  \033[2m# 记住了这台：以后 hb box "…" 就指它（要改指向：hb hosts add box <IP>）\033[0m\n' >&2
   else
     printf '%s %s user=%s\n' "$n" "$ip" "$(_ssh_user_for "$ip")" >> "$HOSTS_FILE"
     printf '  \033[2m# 记住了这台：hb %s "…"\033[0m\n' "$n" >&2
@@ -934,7 +934,7 @@ authkey_rotate_hint() {
 
 # ── 主流程 ─────────────────────────────────────────────────────────
 # 沙箱的 git 到底读不读 ~/.git-credentials —— 一次真问题换来的判据。
-# 现象：hb up ⑦ 说「git 凭据 ✓ 已从 sgl 取回」，文件 69 字节、内容正确，
+# 现象：hb up ⑦ 说「git 凭据 ✓ 已从 box 取回」，文件 69 字节、内容正确，
 # 但 git clone 私有仓库照样要账号（could not read Username），
 # 因为系统级 credential.helper 指着一个自带的 helper，store 排不上。
 # 这是本环境那类「看起来正常、实际在说谎」的典型，所以判据必须落在**行为**上：
@@ -1010,7 +1010,7 @@ ensure_cred_helper() {
 
 # ssh config 里是否真有这个 Host（`ssh <名字>` 能直接用的前提）。
 # 注意别用 alias_usable 代替：那个函数只校验"名字字符串合法"，
-# 对 `minas` 这种只在 hosts 文件里存在、config 里没有的名字也会返回真，
+# 对 `peer-c` 这种只在 hosts 文件里存在、config 里没有的名字也会返回真，
 # 于是 scp 会发给一个不存在的 ssh 别名，报 `Connection closed`（2026-11-14 咬到）。
 _ssh_conf_has_host() {
   awk -v n="$1" '
@@ -1063,13 +1063,13 @@ cmd_get() {
 #
 cmd_up() {
   local quiet=${1:-}
-  # 这里曾经写的是「sgl 侧不做自愈，它就是被连的那一头」。那句话在两个层面都错：
-  #   · 事实层：sgl 也能 `hb <别的机器> "…"`，它不是"被连的一端"；
+  # 这里曾经写的是「box 侧不做自愈，它就是被连的那一头」。那句话在两个层面都错：
+  #   · 事实层：box 也能 `hb <别的机器> "…"`，它不是"被连的一端"；
   #   · 工程层：把一个跨平台工具塞进"我修你 / 你被我修"的模型后，
   #     第一件事就是给某一端写死一个 no-op —— 而那正是故障藏身的地方。
   #
   # 但下面这些**平台差异是真的**，不修掉会真出事：
-  #   在 sgl 上照搬 Linux 那套 → mkdir /var/lib/tailscale（被 MSYS 改写成
+  #   在 box 上照搬 Linux 那套 → mkdir /var/lib/tailscale（被 MSYS 改写成
   #   D:/2Environment/Git/var/lib/…）、pgrep '--tun=userspace' 必然找不到、
   #   然后 nohup tailscaled 起**第二个**用户态 daemon 抢 1055，和系统服务打架；
   #   失败时报的还是"守护进程启动失败"，看着像网络问题。
@@ -1092,7 +1092,7 @@ cmd_up() {
       ok "$(tailscale version 2>/dev/null | head -1)（官方客户端，不走下载链）"
     else
       bad "没找到 tailscale.exe —— 这台机器上得先装官方客户端"
-      echo "    这台不像 sgl：这里没有可用的系统服务，也没有下载链（Windows 版需要 MSI）"
+      echo "    这台不像 box：这里没有可用的系统服务，也没有下载链（Windows 版需要 MSI）"
       echo "    下一步：装上 Tailscale 后重跑；或者 $SELF doctor 看还差什么"
       return 1
     fi
@@ -1287,7 +1287,7 @@ cmd_up() {
 
   say "⑤ 连通性自检"
   local h out line got=0
-  for h in 100.113.237.37 100.67.55.35; do
+  for h in 100.64.0.5 100.67.55.35; do
     got=0
     for i in 1 2 3; do
       out=$(timeout 20 "${TS[@]}" ping -c 2 "$h" 2>&1)
@@ -1308,18 +1308,18 @@ cmd_up() {
     echo "    这一步不影响网络自愈，只影响远程执行。"
     return 1
   fi
-  # 只做一次真连接验证：私钥对但 sgl 的 authorized_keys 没这把钥时，
+  # 只做一次真连接验证：私钥对但 box 的 authorized_keys 没这把钥时，
   # 症状是 "Permission denied (publickey)"，与「网络不通」完全是两件事。
   #
-  # 这里**不再** return 1。原来是"sgl 不通 = up 失败"，但 sgl 是台会关机的
+  # 这里**不再** return 1。原来是"box 不通 = up 失败"，但 box 是台会关机的
   # Windows 台式机，一年里大半时间不在线；把它当唯一参照物，等于让"这台机器
   # 环境好不好"取决于另一台开没开机。而真正影响全网的只有"别人进不来"，
   # 那件事由 ⑥½ 用所有在线节点兜。
-  if timeout 20 ssh -o BatchMode=yes -o ConnectTimeout=12 sgl "exit 0" >/dev/null 2>&1; then
-    ok "ssh sgl 可用"
+  if timeout 20 ssh -o BatchMode=yes -o ConnectTimeout=12 box "exit 0" >/dev/null 2>&1; then
+    ok "ssh box 可用"
   else
-    warn "ssh sgl 不通 —— 忽略，下面改用所有在线节点"
-    echo "    若别的机器也连不进这台，问题在本机授权；否则只是 sgl 没开机。"
+    warn "ssh box 不通 —— 忽略，下面改用所有在线节点"
+    echo "    若别的机器也连不进这台，问题在本机授权；否则只是 box 没开机。"
   fi
 
   say "⑥½ 公钥名单"
@@ -1327,16 +1327,16 @@ cmd_up() {
 
   # ⑦ 补上「能拉代码」这一环。
   # 沙箱被清空时 ~/.git-credentials 一并消失，于是 git clone 私有仓库失败；
-  # 而 sgl 上那份一直是好的。缺了它，「环境恢复好了」只到能 ssh，还干不了活 ——
+  # 而 box 上那份一直是好的。缺了它，「环境恢复好了」只到能 ssh，还干不了活 ——
   # 上一个接手的人就是在这里折返的：先试直连（被掐）→ 想配代理（没凭据）→
-  # 最后用 git bundle 从 sgl 打包含中转。凭据就在对端放着，取回来就完了。
+  # 最后用 git bundle 从 box 打包含中转。凭据就在对端放着，取回来就完了。
   say "⑦ git 凭据"
   if [ -s "$HOME/.git-credentials" ]; then
     ok "已存在"
   else
-    # 平台无关：sgl 上取不出就直说，别让 PowerShell 去拼 base64 再报个看不懂的错
+    # 平台无关：box 上取不出就直说，别让 PowerShell 去拼 base64 再报个看不懂的错
     local _cred
-    _cred=$(ssh -o BatchMode=yes -o ConnectTimeout=12 sgl \
+    _cred=$(ssh -o BatchMode=yes -o ConnectTimeout=12 box \
               "bash -lc 'base64 -w0 < \"\$HOME/.git-credentials\" 2>/dev/null'" 2>/dev/null \
             | tr -d '\r\n')
     # 取回的是 base64 原文（远端只负责编码，解码在本地做）：
@@ -1346,12 +1346,12 @@ cmd_up() {
        && [ -s "$HOME/.git-credentials.hb" ]; then
       mv "$HOME/.git-credentials.hb" "$HOME/.git-credentials"
       chmod 600 "$HOME/.git-credentials"
-      ok "已从 sgl 取回"
+      ok "已从 box 取回"
     else
       rm -f "$HOME/.git-credentials.hb"
-      is_windows && { warn "本机即 sgl，无对端可取"; } || {
-        warn "沙箱与 sgl 都没有 —— 拉私有仓库会失败"
-        echo "     在 sgl 上执行 cat \$HOME/.git-credentials，粘到沙箱同名文件（chmod 600）"
+      is_windows && { warn "本机即 box，无对端可取"; } || {
+        warn "沙箱与 box 都没有 —— 拉私有仓库会失败"
+        echo "     在 box 上执行 cat \$HOME/.git-credentials，粘到沙箱同名文件（chmod 600）"
       }
     fi
   fi
@@ -1361,9 +1361,9 @@ cmd_up() {
     ensure_cred_helper || warn "git 凭据文件在，但 git 不会读它 —— 见上方提示"
   fi
 
-  # 别在这里教人 `ssh sgl` —— 裸 ssh 不会先自修网络，掉线时给出的又是那句
+  # 别在这里教人 `ssh box` —— 裸 ssh 不会先自修网络，掉线时给出的又是那句
   # 指向错误方向的 "Connection closed by UNKNOWN port 65535"。用 hb 自己。
-  [ -z "$quiet" ] && { echo; ok "完成"; echo "   用法：$SELF sgl \"命令\"（与 ssh 等价，但掉线会先自修）"; }
+  [ -z "$quiet" ] && { echo; ok "完成"; echo "   用法：$SELF box \"命令\"（与 ssh 等价，但掉线会先自修）"; }
   return 0
 }
 
@@ -1384,8 +1384,8 @@ cmd_doctor() {
     printf '  %-24s OK  %s\n' "tailscale 二进制" "$(tailscale version 2>/dev/null | head -1)"
   else echo "缺失 —— $SELF up 会装"; fail=1; fi
 
-  # Windows（sgl）是出口而不是客户端，下面这些「修隧道用的东西」它不需要，
-  # 标成 —  而不是 ✗，否则 sgl 上永远显示体检失败，等于噪音。
+  # Windows（box）是出口而不是客户端，下面这些「修隧道用的东西」它不需要，
+  # 标成 —  而不是 ✗，否则 box 上永远显示体检失败，等于噪音。
   if is_windows; then
     printf '  %-24s %s\n' "本地安装包缓存" "—  不适用（Windows 用官方客户端）"
     printf '  %-24s %s\n' "项目 vendor 缓存" "—  不适用"
@@ -1436,7 +1436,7 @@ cmd_doctor() {
 
   printf '  %-24s ' "netmap 节点数"
   # 不能用 `grep '^100\.'` 数：Windows 客户端的 status 每行带 \r，
-  # `wc -l` 认不出来，sgl 上明明 6 个节点却报 0。改数「含 100. 的行」。
+  # `wc -l` 认不出来，box 上明明 6 个节点却报 0。改数「含 100. 的行」。
   local n; n=$("${TS[@]}" status 2>/dev/null | tr -d '\r' | grep -c '100\.' || true)
   echo "$n"
   [ "${n:-0}" -gt 1 ] || fail=1
@@ -1449,7 +1449,7 @@ cmd_doctor() {
     # 自带 helper，根本不读 store」→ clone 报 could not read Username。
     # 判的是「沙箱 git 认不认」：store 排第一就行。
     if [ ! -s "$HOME/.git-credentials" ]; then
-      echo "无 → hb up 会从 sgl 取回"; fail=1
+      echo "无 → hb up 会从 box 取回"; fail=1
     elif git_reads_store; then
       echo "OK  ~/.git-credentials（store 生效）"
     else
@@ -1465,9 +1465,9 @@ cmd_doctor() {
     else
       echo "无 —— 用 ssh-keygen 生成，或放到 $HB_HOME/hb_key"; fail=1
     fi
-    printf '  %-24s ' "sgl 可达"
+    printf '  %-24s ' "box 可达"
     if port_open 127.0.0.1 1055 8 && \
-       timeout 20 ssh -o BatchMode=yes -o ConnectTimeout=10 sgl "exit 0" >/dev/null 2>&1; then
+       timeout 20 ssh -o BatchMode=yes -o ConnectTimeout=10 box "exit 0" >/dev/null 2>&1; then
       echo "OK"
     else echo "不通"; fail=1; fi
   fi
@@ -1579,9 +1579,9 @@ cmd_run() {
   #   ② 用户变成 root → 报 "Permission denied (publickey)"。
   # 两个报错都指向"机器不通/没授权"，而链路其实是好的。实测踩过，别再简化。
   #
-  # 用户名的来源按可信度排：名字前缀（sgl2 → sgl）→ 候选名里出现的已知前缀
-  # （网内如果有 jetson27，就有账号 jetson）→ sgl（本环境唯一被授权的常规账号）。
-  # 别用 `${name%%[0-9]*}` 一把梭：`desktop-sgl-4` 会变成 `desktop-sgl-`。
+  # 用户名的来源按可信度排：名字前缀（nas2 → nas）→ 候选名里出现的已知前缀
+  # → 当前登录用户。
+  # 别用 `${name%%[0-9]*}` 一把梭：`desktop-box-4` 会变成 `desktop-box-`。
   # 目标解析成 IP 时，ssh 不知道该用哪个账号、走不走隧道 —— 参数得由 hb 补齐。
   # 裸 `ssh 100.x.y.z` 会从 config 开头匹配第一条生效的 Host，于是：
   #   ① 丢掉 ProxyCommand → 直连超时，报 "Connection timed out"；
@@ -1599,14 +1599,14 @@ cmd_run() {
       tolower($1)=="user"              { u=$2; next }
       END { if (hh!="" && u!="") print u }' "$SSH_DIR/config" 2>/dev/null)
     if [ -z "$ssh_user" ]; then
-      # 没有现成的 Host 可比：只信「名字前缀」（sgl2 → sgl）。
+      # 没有现成的 Host 可比：只信「名字前缀」（nas2 → nas）。
       # 不从别的节点猜 —— 网内第一个带数字的节点是沙箱 e8a313c69199（前缀 "e"），
-      # 下一个减版本号得到 "desktop-sgl"，两个都不是账号。
+      # 下一个减版本号得到 "desktop-box"，两个都不是账号。
       pref="${sshr%%[0-9]*}"; pref="${pref%-}"
       [ "$pref" != "$sshr" ] && printf '%s' "$pref" | grep -qE '^[a-zA-Z][a-zA-Z0-9_.]*$' && ssh_user="$pref"
     fi
-    ssh_user="${ssh_user:-sgl}"
-    # 先直连试一次，再穿隧道。理由：真机（Jetson、sgl）是内核 tun，
+    ssh_user="${ssh_user:-box}"
+    # 先直连试一次，再穿隧道。理由：真机（Jetson、box）是内核 tun，
     # 直连本来就能通且更快；沙箱是用户态，直连秒失败再回落到代理，
     # 代价只有一次极短的失败。反过来（只走代理）会把两端都拖慢。
     set -- -o "ProxyCommand=$(ssh_proxy_cmd)" \
@@ -1615,7 +1615,7 @@ cmd_run() {
   fi
 
   # 解析到哪台要说出来，但不占 stdout：stdout 是远端命令的输出，被一行提示
-  # 污染后 `out=$(hb sgl cat file)` 就不干净了。
+  # 污染后 `out=$(hb box cat file)` 就不干净了。
   if [ "$host" != "$name" ]; then
     [ $hit_node -eq 1 ] && why=节点名 || why=别名
     printf '\033[2m# %s → %s（%s）\033[0m\n' "$name" "$host" "$why" >&2
@@ -1624,7 +1624,7 @@ cmd_run() {
     warn "网络未就绪，先修复"
     cmd_up quiet || { hb_diagnose "$host" 1; die "修复失败"; }
   fi
-  # 记住"这台"：第一台叫 sgl（老习惯，退化成默认），之后每台都用它的节点名。
+  # 记住"这台"：第一台叫 box（老习惯，退化成默认），之后每台都用它的节点名。
   # 不记的话，下一次还是只能靠 IP 或长名字，而人记住的永远是简称。
   if [ "$host" != "$name" ] || printf '%s' "$host" | grep -qE '^[0-9]+\.'; then
     hosts_remember "$name" "$host" >/dev/null 2>&1 || true
@@ -1759,7 +1759,7 @@ cmd_vendor() {
 }
 
 
-# 借道：沙箱直连 GitHub 会间歇性被掐，用 ssh -L 借 sgl 上的 Clash。
+# 借道：沙箱直连 GitHub 会间歇性被掐，用 ssh -L 借 box 上的 Clash。
 # 手动排障用：只建隧道，不碰仓库。
 
 # ── 拉仓库：把「借道 + 凭据」收成一条 ──────────────────────────────
@@ -1802,7 +1802,7 @@ hb_diagnose() {
             if port_open "$host" 22 5; then
               # 22 端口在听就等于 sshd 在跑。这时候再报「SSH 服务没在听」是自相矛盾，
               # 而且把排查方向指反了 —— 2026-11-16 实测：那台 Jetson 的账号是 root，
-              # hb 默认拿当前用户名（sgl）去登，回 Permission denied，却被诊断成
+              # hb 默认拿当前用户名（box）去登，回 Permission denied，却被诊断成
               # 「SSH 服务没在听」，下一步该看账号还是看 sshd，屏幕上一个字都没说。
               printf '  %-20s %s\n' "网络到 $host" "通；22 端口在听 → 问题在认证（账号/公钥），不是服务没起"
               echo "    常见原因：这台机器上没有这个账号（JetPack 镜像常是 root / ubuntu），或公钥没埋进去"
@@ -1862,9 +1862,9 @@ cmd_list() {
 
   # 本机 IP 直接问 tailscale ip -4，不从 status 文本里猜。
   # 旧写法拿 hostname 去匹配 status 第二列：沙箱上 Self 恰好排第一行还能蒙对，
-  # sgl 上它排第六行，而 status 里叫 desktop-sgl-4、hostname 是 DESKTOP-SGL，
+  # box 上它排第六行，而 status 里叫 desktop-box-4、hostname 是 DESKTOP-SGL，
   # 匹配不上就回落到「最后一行的 IP」—— 于是把 yahboom8 当成自己，
-  # 真正的 sgl 被列成「对端 offline」，整屏都是假的。
+  # 真正的 box 被列成「对端 offline」，整屏都是假的。
   local node_ip="" tsraw line p_ip p_name p_st p_seen
   node_ip=$("${TS[@]}" ip -4 2>/dev/null | head -1 | tr -d '\r')
   tsraw=$("${TS[@]}" status 2>/dev/null | tr -d '\r')
@@ -1898,7 +1898,7 @@ cmd_list() {
   # 写法：先存进变量再 case 匹配；`cmd 2>&1 | grep -q pong && p=1` 在 pipefail 下
   # 会静默判 0（实测），那正是上一版把在线节点全标成离线的元凶。
   # ping 两端都做：Windows 的 `tailscale ping` 同样可用，之前跳过了，
-  # 于是 sgl 上的 list 永远不区分"在线"和"在线但不可达"。
+  # 于是 box 上的 list 永远不区分"在线"和"在线但不可达"。
   if true; then
     local peers2="" pout
     while IFS='|' read -r p_ip p_name p_st p_seen; do
@@ -1920,12 +1920,12 @@ cmd_list() {
   # 顺带覆盖"git 拿空值"这种隐形状��（缓存对象说读得到，实际读不到）。
   if [ $cred -eq 1 ] && _git_sees_credential; then creds_store=1; fi
 
-  # ssh 探针放后台，和下面的 ping 并行。sgl 的 sshd 每次登录要起 PowerShell 并加载
+  # ssh 探针放后台，和下面的 ping 并行。box 的 sshd 每次登录要起 PowerShell 并加载
   # profile，实测 6~9s（链路走 relay 更慢），串行叠在 ping 上 list 就要 9s ——
   # 一条"看一眼"的命令不该让人等这么久。
   local sshpid=""
   if [ $socks -eq 1 ] && ! is_windows; then
-    timeout 20 ssh -o BatchMode=yes -o ConnectTimeout=8 sgl "exit 0" >/dev/null 2>&1 &
+    timeout 20 ssh -o BatchMode=yes -o ConnectTimeout=8 box "exit 0" >/dev/null 2>&1 &
     sshpid=$!
   fi
 
@@ -1956,7 +1956,7 @@ cmd_list() {
     local role; if is_windows; then role=win; else role=sandbox; fi
     jb() { [ "$1" = "1" ] && printf 'true' || printf 'false'; }
     # 不适用的项给 null，不给 false —— false 是"坏了"，null 是"这里不涉及"。
-    # 只有两项属于"本机自己不用"：socks1055（本机不绕自己）、sgl_ssh（本机就是它）。
+    # 只有两项属于"本机自己不用"：socks1055（本机不绕自己）、default_ssh（本机就是它）。
     # 私钥 / git 凭据两端都要，一律给布尔 —— 别再用 role 去猜。
     js() { if is_windows; then printf 'null'; else printf '%s' "$(jb "$1")"; fi; }
     printf '{\n'
@@ -2012,7 +2012,7 @@ cmd_list() {
     if [ $creds_store -eq 1 ]; then ok "git 凭据可用（store 生效）"
     elif [ $cred -eq 1 ]; then bad "git 凭据文件在，但 helper 读不到 → $SELF up"
     else bad "无 git 凭据 → $SELF up"; fi
-    [ $sshok -eq 1 ] && ok "ssh sgl 通" || bad "ssh sgl 不通 → $SELF up"
+    [ $sshok -eq 1 ] && ok "ssh box 通" || bad "ssh box 不通 → $SELF up"
   fi
 
   echo
@@ -2042,7 +2042,7 @@ cmd_list() {
   return $rc
 }
 
-# ── 两端自证：本地 hb / AGENTS.md 与 sgl 上那份是不是同一份 ─────────
+# ── 两端自证：本地 hb / AGENTS.md 与 box 上那份是不是同一份 ─────────
 # 为什么值得单独一条命令：换沙箱后最高频的动作之一就是「核对两端脚本同版」。
 # 手工做要拼 ssh + 中文目录 + 至少两层引号，实测会一路退到 base64、
 # 再退到 UTF-16LE EncodedCommand，四轮才成 —— 而每一轮失败都长得像别的问题。
@@ -2057,7 +2057,7 @@ cmd_list() {
 # 三条边界，都是实测出来的：
 #   · 域名跟节点走，不跟帽子走。同一时刻只有一台能叫 hb-hub，第二台会拿到
 #     hb-hub-1。所以「戴上时域名固定、摘下后还原」是能做到的最接近的效果。
-#   · 改名不会断现有连接（实测：改名后 ssh sgl 照常回 OK），所以随时可戴可摘。
+#   · 改名不会断现有连接（实测：改名后 ssh box 照常回 OK），所以随时可戴可摘。
 #   · funnel 配置绑的是「改名那一刻的域名」。改名后旧配置还在、旧域名还能通，
 #     看起来一切正常其实是个幽灵 —— 所以戴上时必须先 funnel reset。
 _HUB_NAME="hb-hub"
@@ -2214,8 +2214,8 @@ cmd_lend() {
     "${TS[@]}" set --hostname="$orig" >/dev/null 2>&1
     rm -f "$_HUB_STATE"
     # 改完立刻报「已还原」是撒谎：prefs 变了，协调面到 status 还有延迟。
-    # 2026-11-16 实测：prefs 已经是 desktop-sgl-4，status --json 仍回 hb-hub，
-    # 而屏幕已经打出「名字还原为 desktop-sgl-4」—— 下一个人去 hb list 会当场懵。
+    # 2026-11-16 实测：prefs 已经是 desktop-box-4，status --json 仍回 hb-hub，
+    # 而屏幕已经打出「名字还原为 desktop-box-4」—— 下一个人去 hb list 会当场懵。
     # 判据改成「status 里真的是原名」，最多等 12 秒，超时就明说，不假装成功。
     local i dn=""
     for i in 1 2 3 4 5 6; do
@@ -2341,7 +2341,7 @@ _enroll_cleanup() {
 #
 # 上一版是反的：lend 调 enroll。于是「能力」里塞着整条业务流，而 enroll 对 lend
 # 一无所知 —— 第一次接手的人只能按字面挑「加设备」，拿到随本机名走的链接
-# （实测发出 desktop-sgl-4…，机器一改名就死）。方向反了，discoverability 就没救。
+# （实测发出 desktop-box-4…，机器一改名就死）。方向反了，discoverability 就没救。
 _dist_serve() {
   local port=8890 timeout=900 no_funnel=0 script=""
   local -a extras=()
@@ -2776,7 +2776,7 @@ PY
     return 1
   }
   # funnel 模式绑 127.0.0.1 就够（tailscaled 从本机代理进来）。
-  # --no-funnel 必须绑 0.0.0.0 —— 2026-11-03 在 sgl 实测：绑 127.0.0.1 时，
+  # --no-funnel 必须绑 0.0.0.0 —— 2026-11-03 在 box 实测：绑 127.0.0.1 时，
   # 打印出去的 http://100.x.y.z:port 连本机自己都连不上（curl 7，
   # netstat 只有 127.0.0.1:8890 LISTENING），而界面上看不出任何异常。
   local bind=127.0.0.1 i
@@ -2875,7 +2875,7 @@ PY
     printf '%s' "$base" > "$tmpd/base_url"
     # 本机 DNS 若把这个域名解析进 198.18.0.0/15（Clash / Mihomo 的 fake-ip 段），
     # 本机自测**永远**拿不到 200：TUN 先本地 accept、再向上游拨，TLS 当场断。
-    # 2026-11-16 实测：desktop-sgl-4…ts.net → 198.18.0.116，000，白等 45 轮 ≈ 5 分钟，
+    # 2026-11-16 实测：desktop-box-4…ts.net → 198.18.0.116，000，白等 45 轮 ≈ 5 分钟，
     # 而且那句"本机自测取不到"会让人以为服务坏了 —— 判据错了，不是环境坏了。
     # 现在的口径：能自测才自测；不能就借网内一台节点验；都验不了就明说"给不出判据"。
     local hij=""
@@ -3139,7 +3139,7 @@ cmd_enroll() {
 # 场景（用户原话）："注册机器时不在线的机子，只能从其他当时在线的机器获得密钥"。
 # 所以做不做这件事，取决于**现在还在不在帽子/在不在线**，不是凭空定时跑。
 #
-# 一个必须处理的死结：新机器的 sgl 不通，是因为它的 authkey 是**单次的**，
+# 一个必须处理的死结：新机器的 box 不通，是因为它的 authkey 是**单次的**，
 # 谁先把它用掉，谁就挤占了它。用户的做法是"让 hb-hub 代劳"：
 # 戴帽子那台是注册时唯一被信任的中间人，它把新机器的公钥带到全网。
 # 所以同步的**发起方**永远选一台在线且 ssh 得通的（自己就是 hb-hub 时就用自己）。
@@ -3157,11 +3157,11 @@ _ssh_opts() {
 
 _peer_list() {
   # 账号从 ~/.ssh/config 的同名 Host 里取（hosts add 生成时就写对了 user）。
-  # 取不到才按名字前缀猜 —— 直接拿主机名当账号会在 sgl 上翻车：
-  # 它的节点名是 desktop-sgl-4，而账号是 sgl。
+  # 取不到才按名字前缀猜 —— 直接拿主机名当账号会在 box 上翻车：
+  # 它的节点名是 desktop-box-4，而账号是 box。
   local self_ip; self_ip=$(tailscale_ip_of)
   # 整行过滤 offline，不只看状态列。踩过的原话长这样：
-  #   100.113.237.37  desktop-sgl-4   singularity23187@  windows  active; relay "sin"; offline, last seen 12m ago
+  #   100.64.0.5  desktop-box-4   singularity23187@  windows  active; relay "sin"; offline, last seen 12m ago
   # 第 5 列是 "active;"（因为它指的是"有过活跃连接尝试"），于是关机的机器
   # 被算成在线，后面每台都要等一次 ConnectTimeout，最后报"一台也没取到"。
   "${TS[@]}" status 2>/dev/null | tr -d '\r' | awk '/^100\./ && $0 !~ /offline/ {print $1, $2, $5}' \
@@ -3176,9 +3176,9 @@ _peer_list() {
 
 # 找一台机器该用什么账号登。
 # 两步，缺一不可：
-#   ① ~/.ssh/config 里名字完全相同的 Host（sgl、ubuntu 这些人工/自动写的短名）
-#   ② 上面没有时，按 HostName 反查 —— 节点名是 desktop-sgl-4，config 里那段的
-#      名字却是 sgl，只按名字匹配会一无所获，然后拿主机名当账号去登，
+#   ① ~/.ssh/config 里名字完全相同的 Host（box、ubuntu 这些人工/自动写的短名）
+#   ② 上面没有时，按 HostName 反查 —— 节点名是 desktop-box-4，config 里那段的
+#      名字却是 box，只按名字匹配会一无所获，然后拿主机名当账号去登，
 #      报的是 Permission denied，看着像密钥没授权。
 _ssh_user_of() {
   local n=$1 ip=""
@@ -3200,7 +3200,7 @@ _fetch_pubkey() {
   local name=$1 dest=$2 tmo=${3:-90} out
   local ct=$tmo; [ "$ct" -gt 25 ] && ct=25
   local -a SO=(); while IFS= read -r l; do SO+=("$l"); done < <(_ssh_opts "$ct")
-  # 必须经 `bash -ls` 中转：sgl 的默认 shell 是 PowerShell，
+  # 必须经 `bash -ls` 中转：box 的默认 shell 是 PowerShell，
   # 直接送一段带 ~ 和 2>/dev/null 的命令会变成
   # "Out-File: Could not find a part of the path 'C:\dev\null'" ——
   # 看着像文件不存在，其实是 PowerShell 在解析 bash 语法。
@@ -3228,7 +3228,7 @@ _push_pubkeys() {
   # 为什么整份走 base64，而不是每行套引号 echo：
   #   ① 公钥行直接进 heredoc 会被 shell 再展开一次（$、反引号、反斜杠），
   #      注释里带个 $ 就把末尾吃掉了，而 authorized_keys 看起来"写进去了"；
-  #   ② 对端是 Windows（sgl）时，命令行要穿 PowerShell → cmd → bash 三层，
+  #   ② 对端是 Windows（box）时，命令行要穿 PowerShell → cmd → bash 三层，
   #      引号每过一层都掉一颗，逐行套引号这条路实测掉进过
   #      "ssh-ed25519: command not found"（公钥被当命令执行）。
   # base64 只有 [A-Za-z0-9+/=]，套多少层都不变形；解码在远端做。
@@ -3248,7 +3248,7 @@ EOF
 # 推是推不动的（鸡生蛋）。第一把钥由 /l 引导脚本预埋 —— 见 serve.py 里
 # 的 pk_block，它跑在 hb 之前，不依赖任何认证。
 #
-# 这里解决的是另一半：老机器（比如 sgl）名单停在一把，新节点上来后
+# 这里解决的是另一半：老机器（比如 box）名单停在一把，新节点上来后
 # 它也该知道新节点。摘帽之前推一轮，省得新机器再去挨个找。
 #
 # 账号只能挨个试：它还没进 hosts，没有任何地方写着它用哪个账号。

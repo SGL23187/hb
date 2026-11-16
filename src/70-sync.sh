@@ -5,7 +5,7 @@
 # 场景（用户原话）："注册机器时不在线的机子，只能从其他当时在线的机器获得密钥"。
 # 所以做不做这件事，取决于**现在还在不在帽子/在不在线**，不是凭空定时跑。
 #
-# 一个必须处理的死结：新机器的 sgl 不通，是因为它的 authkey 是**单次的**，
+# 一个必须处理的死结：新机器的 box 不通，是因为它的 authkey 是**单次的**，
 # 谁先把它用掉，谁就挤占了它。用户的做法是"让 hb-hub 代劳"：
 # 戴帽子那台是注册时唯一被信任的中间人，它把新机器的公钥带到全网。
 # 所以同步的**发起方**永远选一台在线且 ssh 得通的（自己就是 hb-hub 时就用自己）。
@@ -23,11 +23,11 @@ _ssh_opts() {
 
 _peer_list() {
   # 账号从 ~/.ssh/config 的同名 Host 里取（hosts add 生成时就写对了 user）。
-  # 取不到才按名字前缀猜 —— 直接拿主机名当账号会在 sgl 上翻车：
-  # 它的节点名是 desktop-sgl-4，而账号是 sgl。
+  # 取不到才按名字前缀猜 —— 直接拿主机名当账号会在 box 上翻车：
+  # 它的节点名是 desktop-box-4，而账号是 box。
   local self_ip; self_ip=$(tailscale_ip_of)
   # 整行过滤 offline，不只看状态列。踩过的原话长这样：
-  #   100.113.237.37  desktop-sgl-4   singularity23187@  windows  active; relay "sin"; offline, last seen 12m ago
+  #   100.64.0.5  desktop-box-4   singularity23187@  windows  active; relay "sin"; offline, last seen 12m ago
   # 第 5 列是 "active;"（因为它指的是"有过活跃连接尝试"），于是关机的机器
   # 被算成在线，后面每台都要等一次 ConnectTimeout，最后报"一台也没取到"。
   "${TS[@]}" status 2>/dev/null | tr -d '\r' | awk '/^100\./ && $0 !~ /offline/ {print $1, $2, $5}' \
@@ -42,9 +42,9 @@ _peer_list() {
 
 # 找一台机器该用什么账号登。
 # 两步，缺一不可：
-#   ① ~/.ssh/config 里名字完全相同的 Host（sgl、ubuntu 这些人工/自动写的短名）
-#   ② 上面没有时，按 HostName 反查 —— 节点名是 desktop-sgl-4，config 里那段的
-#      名字却是 sgl，只按名字匹配会一无所获，然后拿主机名当账号去登，
+#   ① ~/.ssh/config 里名字完全相同的 Host（box、ubuntu 这些人工/自动写的短名）
+#   ② 上面没有时，按 HostName 反查 —— 节点名是 desktop-box-4，config 里那段的
+#      名字却是 box，只按名字匹配会一无所获，然后拿主机名当账号去登，
 #      报的是 Permission denied，看着像密钥没授权。
 _ssh_user_of() {
   local n=$1 ip=""
@@ -66,7 +66,7 @@ _fetch_pubkey() {
   local name=$1 dest=$2 tmo=${3:-90} out
   local ct=$tmo; [ "$ct" -gt 25 ] && ct=25
   local -a SO=(); while IFS= read -r l; do SO+=("$l"); done < <(_ssh_opts "$ct")
-  # 必须经 `bash -ls` 中转：sgl 的默认 shell 是 PowerShell，
+  # 必须经 `bash -ls` 中转：box 的默认 shell 是 PowerShell，
   # 直接送一段带 ~ 和 2>/dev/null 的命令会变成
   # "Out-File: Could not find a part of the path 'C:\dev\null'" ——
   # 看着像文件不存在，其实是 PowerShell 在解析 bash 语法。
@@ -94,7 +94,7 @@ _push_pubkeys() {
   # 为什么整份走 base64，而不是每行套引号 echo：
   #   ① 公钥行直接进 heredoc 会被 shell 再展开一次（$、反引号、反斜杠），
   #      注释里带个 $ 就把末尾吃掉了，而 authorized_keys 看起来"写进去了"；
-  #   ② 对端是 Windows（sgl）时，命令行要穿 PowerShell → cmd → bash 三层，
+  #   ② 对端是 Windows（box）时，命令行要穿 PowerShell → cmd → bash 三层，
   #      引号每过一层都掉一颗，逐行套引号这条路实测掉进过
   #      "ssh-ed25519: command not found"（公钥被当命令执行）。
   # base64 只有 [A-Za-z0-9+/=]，套多少层都不变形；解码在远端做。
@@ -114,7 +114,7 @@ EOF
 # 推是推不动的（鸡生蛋）。第一把钥由 /l 引导脚本预埋 —— 见 serve.py 里
 # 的 pk_block，它跑在 hb 之前，不依赖任何认证。
 #
-# 这里解决的是另一半：老机器（比如 sgl）名单停在一把，新节点上来后
+# 这里解决的是另一半：老机器（比如 box）名单停在一把，新节点上来后
 # 它也该知道新节点。摘帽之前推一轮，省得新机器再去挨个找。
 #
 # 账号只能挨个试：它还没进 hosts，没有任何地方写着它用哪个账号。

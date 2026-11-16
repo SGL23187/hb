@@ -39,7 +39,7 @@ ensure_ssh_conf() {
 #   · 新机器 C 上来，谁也连不进去，而 hb 自己诊断成"网络不通"
 # Jetson 实测就是这个：端口通、banner 出来、四五个账号全 Permission denied。
 #
-# 集中式（所有人写一个 sgl 的 authorized_keys）不行：sgl 一关，全网失联，
+# 集中式（所有人写一个 box 的 authorized_keys）不行：box 一关，全网失联，
 # 而且每加一台机器都要去改那台。改成**每台机器各自持有一份"谁可以进来"**，
 # 名单靠 hb 自己传播（见 hb sync-keys）：
 #   · 戴帽子那台 = 分发者：注册时它在，新机器缺什么它就给
@@ -85,7 +85,7 @@ _authkeys_merge() {
 ensure_ssh() {
   mkdir -p "$SSH_DIR"; chmod 700 "$SSH_DIR"
 
-  # ① 私钥：已有 → 任一来源恢复 → 报错（不生成新的，新钥 sgl 不认）
+  # ① 私钥：已有 → 任一来源恢复 → 报错（不生成新的，新钥 box 不认）
   local key="$SSH_DIR/$SSH_KEY_NAME" src
   if [ ! -s "$key" ]; then
     if src=$(hb_key_path); then
@@ -126,12 +126,12 @@ ensure_ssh() {
 
 # ══ 子命令表：唯一的"哪些词已经被占"的真相 ══════════════════════════
 # 为什么要有一张表，而不是散在 case 里：机器别名必须**不能落在**这些词上
-# （否则 `hb sgl "ls"` 与 `hb status` 谁优先就成了运气问题）。
+# （否则 `hb box "ls"` 与 `hb status` 谁优先就成了运气问题）。
 # 表里加一个词，别名那边自动就避让了 —— 这是它们唯一的耦合点。
 HB_SUBCMDS="list status doctor up run ts vendor sync-keys hosts enroll lend route put get help"
 
-# 别名文件：本机私有，不进 git、不进载荷。一行 `sgl 100.113.237.37`
-# 第一行是默认主机（hb sgl "..." 里的 sgl 就到它）。
+# 别名文件：本机私有，不进 git、不进载荷。一行 `box 100.64.0.5`
+# 第一行是默认主机（hb box "..." 里的 box 就到它）。
 HOSTS_FILE="${HB_HOSTS_FILE:-$HB_STATE_DIR/hosts}"
 
 # 一个名字能不能安全地当机器别名：
@@ -162,12 +162,12 @@ hosts_resolve() {
   printf '%s' "${hit:-$n}"
 }
 
-# 别名里显式写的账号（`sgl 100.113.237.37 user=sgl` 的第三段）
+# 别名里显式写的账号（`box 100.64.0.5 user=box` 的第三段）
 hosts_user() {
   hosts_all | awk -v n="$1" '$1==n{for(i=3;i<=NF;i++) if ($i ~ /^user=/) { sub(/^user=/,"",$i); print $i; exit }}'
 }
 
-# 一个 IP 该怎么登：先看 config 里 HostName 匹配的那条，再看 sgl 约定
+# 一个 IP 该怎么登：先看 config 里 HostName 匹配的那条，再看 box 约定
 _ssh_user_for() {
   local ip=$1 u=""
   # 逐行：进入 Host 块后看 HostName 是否等于 ip，是就记下这个块里的 User，
@@ -188,7 +188,7 @@ cmd_hosts() {
       local name=$2 target=$3
       # 把后面几段一并收进 target：`hosts add ubuntu 100.88.99.106 user=root`
       # 的 user=root 是第 4 个参数，只取 $3 等于直接把它丢了 ——
-      # 打印"登录账号：sgl"时人会以为自己看错，其实是根本没读到 root。
+      # 打印"登录账号：box"时人会以为自己看错，其实是根本没读到 root。
       if [ $# -gt 3 ]; then
         shift 2
         target="$*"
@@ -198,7 +198,7 @@ cmd_hosts() {
       fi
       if ! alias_usable "$name"; then
         bad "「$name」不能用作机器别名"
-        case " $HB_SUBCMDS " in *" $name "*) echo "    它已经是子命令。换一个名字，例如 sgl2 / sglbox。";; esac
+        case " $HB_SUBCMDS " in *" $name "*) echo "    它已经是子命令。换一个名字，例如 box2 / boxlab。";; esac
         echo "    规则：不与子命令重名、不含空白或引号、不以 - 开头。"
         return 2
       fi
@@ -211,9 +211,9 @@ cmd_hosts() {
       # "Permission denied"，看着像密钥没授权。
       #
       # 2026-11-09 实测：`hb hosts add ubuntu 100.88.99.106 user=root` 打印了
-      # "登录账号：root"，落盘的却是 `100.88.99.106 user=sgl` —— 因为 user=
+      # "登录账号：root"，落盘的却是 `100.88.99.106 user=box` —— 因为 user=
       # 是在这条 IP 判据之后才被看的，此处重写了一遍 target，把人家写的参数吃掉，
-      # 然后拿 _ssh_user_for 的兜底值 sgl 顶上去。现在先解析 user=，再补默认。
+      # 然后拿 _ssh_user_for 的兜底值 box 顶上去。现在先解析 user=，再补默认。
       local ip="${target%% *}" own_user=""
       case " $target " in *" user="*) own_user="${target#*user=}"; own_user="${own_user%% *}" ;; esac
       if printf '%s' "$ip" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
@@ -257,7 +257,7 @@ cmd_hosts() {
       ;;
     ""|list)
       if [ ! -s "$HOSTS_FILE" ]; then
-        echo "  （没有机器别名。加一个：$SELF hosts add sgl 100.113.237.37）"
+        echo "  （没有机器别名。加一个：$SELF hosts add box 100.64.0.5）"
         echo "  没有别名时，hb 也会认 ~/.ssh/config 里的 Host 和网内的节点名。"
         return 0
       fi
@@ -266,7 +266,7 @@ cmd_hosts() {
       while read -r n t; do
         [ -z "$n" ] && continue
         note=""
-        [ $first -eq 1 ] && { note="  ← 默认（$SELF sgl 等同于 $SELF $n）"; first=0; }
+        [ $first -eq 1 ] && { note="  ← 默认（$SELF box 等同于 $SELF $n）"; first=0; }
         if ! alias_usable "$n"; then note="$note  ✗ 与子命令重名，会被忽略"; fi
         printf '  %-10s → %-16s%s\n' "$n" "$t" "$note"
       done <<< "$(hosts_all)"
@@ -277,7 +277,7 @@ cmd_hosts() {
 }
 
 # 调过一次就记住它。规则只有一条：**同名不覆盖、默认位只有一次**。
-# 第一台调到的机器记为 sgl（`hb sgl "…"` 的默认指向），之后各自用节点名。
+# 第一台调到的机器记为 box（`hb box "…"` 的默认指向），之后各自用节点名。
 hosts_remember() {
   local n=$1 ip=$2
   [ -z "$n" ] || [ -z "$ip" ] && return 0
@@ -291,9 +291,9 @@ hosts_remember() {
   hosts_all | awk -v ip="$ip" '{for(i=2;i<=NF;i++) if($i==ip) f=1} END{exit !f}' && return 0
   local first=""
   first=$(hosts_all | head -1 | awk '{print $1}')
-  if [ -z "$first" ] && ! hosts_all | awk '$1=="sgl"{f=1} END{exit !f}'; then
-    printf 'sgl %s user=%s\n' "$ip" "$(_ssh_user_for "$ip")" >> "$HOSTS_FILE"
-    printf '  \033[2m# 记住了这台：以后 hb sgl "…" 就指它（要改指向：hb hosts add sgl <IP>）\033[0m\n' >&2
+  if [ -z "$first" ] && ! hosts_all | awk '$1=="box"{f=1} END{exit !f}'; then
+    printf 'box %s user=%s\n' "$ip" "$(_ssh_user_for "$ip")" >> "$HOSTS_FILE"
+    printf '  \033[2m# 记住了这台：以后 hb box "…" 就指它（要改指向：hb hosts add box <IP>）\033[0m\n' >&2
   else
     printf '%s %s user=%s\n' "$n" "$ip" "$(_ssh_user_for "$ip")" >> "$HOSTS_FILE"
     printf '  \033[2m# 记住了这台：hb %s "…"\033[0m\n' "$n" >&2
@@ -421,7 +421,7 @@ authkey_rotate_hint() {
 
 # ── 主流程 ─────────────────────────────────────────────────────────
 # 沙箱的 git 到底读不读 ~/.git-credentials —— 一次真问题换来的判据。
-# 现象：hb up ⑦ 说「git 凭据 ✓ 已从 sgl 取回」，文件 69 字节、内容正确，
+# 现象：hb up ⑦ 说「git 凭据 ✓ 已从 box 取回」，文件 69 字节、内容正确，
 # 但 git clone 私有仓库照样要账号（could not read Username），
 # 因为系统级 credential.helper 指着一个自带的 helper，store 排不上。
 # 这是本环境那类「看起来正常、实际在说谎」的典型，所以判据必须落在**行为**上：
@@ -497,7 +497,7 @@ ensure_cred_helper() {
 
 # ssh config 里是否真有这个 Host（`ssh <名字>` 能直接用的前提）。
 # 注意别用 alias_usable 代替：那个函数只校验"名字字符串合法"，
-# 对 `minas` 这种只在 hosts 文件里存在、config 里没有的名字也会返回真，
+# 对 `peer-c` 这种只在 hosts 文件里存在、config 里没有的名字也会返回真，
 # 于是 scp 会发给一个不存在的 ssh 别名，报 `Connection closed`（2026-11-14 咬到）。
 _ssh_conf_has_host() {
   awk -v n="$1" '
