@@ -96,6 +96,7 @@ HB_CMDS=(
   "enroll|cmd_enroll|加设备：默认经 hb lend 戴帽子（短链固定），--no-hub 不戴"
   "lend|cmd_lend|能力层：把自己临时变成分发服务器（hb enroll 默认调它）"
   "sync-keys|cmd_sync_keys|向在线节点同步公钥名单"
+  "version|cmd_version|我是哪一份：路径 + 指纹（PATH 有同名 hb 时用它自证）"
   "ts|cmd_ts|透传 tailscale 命令"
   "route|cmd_route|子网路由：ls 看谁在广播，approve 批准（需要 API token）"
   "vendor|cmd_vendor|把 tailscale 二进制归档到目录（离线自举用）"

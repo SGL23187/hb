@@ -153,6 +153,13 @@ grep -qE '^SSH_KEY_NAME=' hb && ok 'SSH_KEY_NAME 在加载时就赋值' || bad '
 grep -v '^[[:space:]]*#' hb | grep -q 'IdentityFile=\$SSH_DIR'   && bad '执行路径仍在拼空变量（会变成 IdentityFile=/）'   || ok '执行路径不再直接拼 $SSH_DIR/$SSH_KEY_NAME'
 grep -q '_hb_key=\$(hb_key_path' hb && ok '执行路径先解析出真实私钥' || bad '执行路径没走 hb_key_path'
 
+section '自证身份（同名 hb 满天飞时唯一可靠的判据）'
+VER_OUT=$(./hb --version 2>&1); VER_RC=$?
+assert_rc '--version 返回 0' "$VER_RC" 0
+assert_contains 'version 打出脚本绝对路径' "$VER_OUT" "$(pwd)/hb"
+assert_contains 'version 打出指纹' "$VER_OUT" '指纹'
+assert_contains 'version 打出行数' "$VER_OUT" '行数'
+
 section '自助入口不该被报成失败'
 ./hb --help >/dev/null 2>&1; assert_rc '--help 返回 0' "$?" 0
 ./hb help   >/dev/null 2>&1; assert_rc 'hb help 返回 0' "$?" 0

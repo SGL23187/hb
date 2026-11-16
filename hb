@@ -96,6 +96,7 @@ HB_CMDS=(
   "enroll|cmd_enroll|加设备：默认经 hb lend 戴帽子（短链固定），--no-hub 不戴"
   "lend|cmd_lend|能力层：把自己临时变成分发服务器（hb enroll 默认调它）"
   "sync-keys|cmd_sync_keys|向在线节点同步公钥名单"
+  "version|cmd_version|我是哪一份：路径 + 指纹（PATH 有同名 hb 时用它自证）"
   "ts|cmd_ts|透传 tailscale 命令"
   "route|cmd_route|子网路由：ls 看谁在广播，approve 批准（需要 API token）"
   "vendor|cmd_vendor|把 tailscale 二进制归档到目录（离线自举用）"
@@ -3407,6 +3408,25 @@ show_help() {
   printf '  凭据  不自带入网凭据：$HB_STATE_DIR/credentials.json 或 $TAILSCALE_AUTHKEY\n'
 }
 
+# 自证身份：机器上常有多个同名 hb（旧版本、别人的副本），
+# 而"我到底在跑哪一份"只靠 command -v 推断并不可靠 —— 尤其是按文档把脚本
+# 复制到 /usr/bin 之后，PATH 里已经看不出它来自哪个仓库。
+cmd_version() {
+  local sha n
+  sha=$(sha256sum "$HB_SELF" 2>/dev/null | cut -c1-16)
+  n=$(grep -c '' "$HB_SELF" 2>/dev/null)
+  printf 'hb %s
+' "${HB_VERSION:-dev}"
+  printf '  路径    %s
+' "$HB_SELF"
+  printf '  指纹    %s
+' "${sha:-取不到}"
+  printf '  行数    %s
+' "${n:-?}"
+  printf '  说明    指纹变了就是换了另一份；排查\"我是不是在跑旧版\"先看这一行
+'
+}
+
 # 裸调用 = doctor：只读、无副作用。想不起子命令时敲一下也有有效输出。
 [ $# -eq 0 ] && { cmd_doctor; exit $?; }
 
@@ -3422,6 +3442,7 @@ done
 
 case "$1" in
   -h|--help|help) show_help; exit 0 ;;
+  -V|--version|version) cmd_version; exit 0 ;;
   -*) show_help; exit 2 ;;
 esac
 

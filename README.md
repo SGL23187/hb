@@ -34,12 +34,17 @@ git clone https://github.com/SGL23187/hb.git ~/hb-src
 export PATH="$HOME/hb-src:$PATH"          # 建议写进 ~/.bashrc
 ```
 
-**验证装的是哪一份**（重要：如果机器上已有同名的 hb，很容易测到别人的版本）：
+**验证装的是哪一份**（机器上常有多个同名 `hb`，很容易测到别人的版本）：
 
 ```bash
-command -v hb        # 应输出 /home/你/hb-src/hb
-hb --help | head -1  # 打出 "hb —— 把「连上、修好、干活」收进一个文件"
+hb --version
+# hb dev
+#   路径    /home/你/hb-src/hb
+#   指纹    4c773f3b2824918e
+#   行数    3461
 ```
+
+路径与指纹是脚本自己报的，不依赖 PATH 状态 —— 复制到 `/usr/bin` 之后也能自证。
 
 Windows 用 Git Bash：那里 `ln -s` 默认没权限（`Operation not permitted`），也别用 `~/.local/bin`
 （通常不在 PATH）。直接加 PATH，或者复制到 Git Bash 自己的 bin：
@@ -47,6 +52,9 @@ Windows 用 Git Bash：那里 `ln -s` 默认没权限（`Operation not permitted
 ```bash
 cp hb /usr/bin/hb      # Git Bash 里 /usr/bin 一般可写
 ```
+
+复制之后 `command -v hb` 只会显示 `/usr/bin/hb`，看不出它来自哪个仓库 ——
+这时候用 `hb --version` 看路径/指纹确认即可。
 
 依赖：`bash` 4+、`ssh`、`curl`。可选：`python3`（解析 JSON 更稳，没有也能跑）。
 
@@ -86,6 +94,7 @@ hb enroll            # 打一个公网可访问的分发点，打印安装命令
 | `hb lend [--off]` | 能力层：把自己临时变成分发服务器 |
 | `hb sync-keys` | 向在线节点同步公钥名单 |
 | `hb route ls\|approve` | 子网路由（需要 API token） |
+| `hb version` | 我是哪一份：路径 + 指纹 + 行数 |
 | `hb ts ...` | 透传 tailscale 命令 |
 | `hb vendor` | 把 tailscale 二进制归档到目录（离线自举） |
 
@@ -135,7 +144,7 @@ hb enroll            # 打一个公网可访问的分发点，打印安装命令
 
 ```bash
 bash build.sh            # 拼出 hb
-bash tests/run.sh        # 离线护栏（36 项）
+bash tests/run.sh        # 离线护栏（47 项）
 python3 check_fn_order.py hb
 ```
 
