@@ -1760,7 +1760,7 @@ cmd_vendor() {
 
 
 # 借道：沙箱直连 GitHub 会间歇性被掐，用 ssh -L 借 sgl 上的 Clash。
-# mbws.sh push 已内置这个兜底，这里只是给手动操作一个短命令。
+# 手动排障用：只建隧道，不碰仓库。
 
 # ── 拉仓库：把「借道 + 凭据」收成一条 ──────────────────────────────
 # 2026-11-02 恢复实测：直连 GitHub 超时 → hb proxy on → clone 卡在
@@ -2361,7 +2361,7 @@ _dist_serve() {
         echo
         echo "  --port N        本地监听端口（默认 8890，Funnel 固定转发到 443）"
         echo "  --timeout 秒    最长等待（默认 900 = 15 分钟）"
-        echo "  --script 文件   指定要分发的安装脚本（默认找 win-bootstrap/dist/setup.ps1）"
+        echo "  --script 文件   指定要分发的安装脚本（默认找 hb 旁边的 dist/setup.ps1）"
         echo "  --extra 文件    额外资产，可重复。挂在 /x/<文件名>，并在 /i 里自动指给安装脚本"
         echo "                  典型用途：把 37 MB 的 tailscale msi 带上，别让新机器去赌出网"
         echo "  --no-funnel     只起本地服务，不开公网（给 tailnet 内已有节点用）"
@@ -2411,14 +2411,13 @@ _dist_serve() {
   if [ -n "$script" ]; then
     win_src="$script"
   else
-    # 按真实布局依次找：hb 可能在 scripts/、tools/、仓库根，也可能在 Windows 的 D:\2Environment\hb
+    # 给 Windows 新机器分发用的安装脚本：只看 hb 旁边和上一级，别去猜目录结构。
+    # 找不到也能跑 —— 那就只分发 hb 自己（Linux / macOS 够用）。
     local c
     for c in "$here/dist/setup.ps1" \
-             "$here/win-bootstrap/dist/setup.ps1" \
-             "$here/../tools/win-bootstrap/dist/setup.ps1" \
-             "$here/../mbws/tools/win-bootstrap/dist/setup.ps1" \
-             "$here/../../tools/win-bootstrap/dist/setup.ps1" \
-             "$here/../mbws/tools/win-bootstrap/assets/setup.src.ps1"; do
+             "$here/assets/setup.ps1" \
+             "$here/../assets/setup.ps1" \
+             "$here/setup.ps1"; do
       [ -s "$c" ] && { win_src="$c"; break; }
     done
   fi

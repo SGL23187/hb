@@ -11,7 +11,7 @@ hb_bootstrap → hb_seal_payload → hb_encrypt。任何一个被调函数定义
 import re
 import sys
 
-path = sys.argv[1] if len(sys.argv) > 1 else "/workspace/scripts/hb"
+path = sys.argv[1] if len(sys.argv) > 1 else "hb"
 lines = open(path, encoding="utf-8", errors="replace").read().splitlines()
 
 # 顶层函数定义：# 处理 ---- 注释、第 0 列开始的 name() { ... }
