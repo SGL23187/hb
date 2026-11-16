@@ -27,13 +27,32 @@ $ hb                    # 裸调用 = 只读体检
 
 ## 安装
 
+只有一个脚本，不需要构建（仓库里那份 `hb` 就是成品）：
+
 ```bash
-git clone https://github.com/SGL23187/hb.git
-ln -s "$PWD/hb/hb" ~/.local/bin/hb      # 或把仓库目录加进 PATH
-hb
+git clone https://github.com/SGL23187/hb.git ~/hb-src
+export PATH="$HOME/hb-src:$PATH"          # 建议写进 ~/.bashrc
 ```
 
-要求：bash 4+，`ssh`、`curl`。Windows 上用 Git Bash（`hb.cmd` 也可用）。
+**验证装的是哪一份**（重要：如果机器上已有同名的 hb，很容易测到别人的版本）：
+
+```bash
+command -v hb        # 应输出 /home/你/hb-src/hb
+hb --help | head -1  # 打出 "hb —— 把「连上、修好、干活」收进一个文件"
+```
+
+Windows 用 Git Bash：那里 `ln -s` 默认没权限（`Operation not permitted`），也别用 `~/.local/bin`
+（通常不在 PATH）。直接加 PATH，或者复制到 Git Bash 自己的 bin：
+
+```bash
+cp hb /usr/bin/hb      # Git Bash 里 /usr/bin 一般可写
+```
+
+依赖：`bash` 4+、`ssh`、`curl`。可选：`python3`（解析 JSON 更稳，没有也能跑）。
+
+> **目标机的前置条件**（hb 管不到，得你自己保证）：目标上跑着 sshd，
+> 你的公钥已经在它的 `authorized_keys` 里，或允许该账号密码登录。
+> hb 只负责"用你的私钥连过去"，不代你授权。
 
 ## 30 秒上手
 

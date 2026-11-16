@@ -32,6 +32,7 @@ for _al in "${HB_ALIASES[@]}"; do
 done
 
 case "$1" in
+  -h|--help|help) show_help; exit 0 ;;
   -*) show_help; exit 2 ;;
 esac
 

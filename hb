@@ -74,6 +74,14 @@ HB_HOME=$(CDPATH= cd -- "$(dirname -- "$HB_SELF")" 2>/dev/null && pwd)
 # 安装目录可能只读，状态得有个可写的地方。
 HB_STATE_DIR="${HB_STATE_DIR:-$HOME/.hb}"
 
+# ~/.ssh 与私钥名：**必须在这里赋值**。
+# 2026-11-16 冷启动实测：这两个变量跟着被删掉的载荷模块一起消失了，
+# 于是 -o IdentityFile=$SSH_DIR/$SSH_KEY_NAME 变成 -o IdentityFile=/，
+# ssh 报 "Load key "/": Is a directory" + Permission denied ——
+# 而 hb 自己的诊断说"账号不对/公钥没埋"，把方向指到了远端。空变量不报错，最难查。
+SSH_DIR="${HB_SSH_DIR:-$HOME/.ssh}"
+SSH_KEY_NAME="${HB_SSH_KEY:-id_ed25519}"
+
 # ══════ 命令表（唯一来源）══════════════════════════════════════════════
 # 帮助文本、子命令分发、重名检查都读这一张表。加一个命令只改这里一处。
 # 格式：名字|处理函数|一句话
@@ -515,6 +523,7 @@ hb_key_path() {
 #
 ensure_ssh_conf() {
   mkdir -p "$SSH_DIR"; chmod 700 "$SSH_DIR"
+  local _hb_k; _hb_k=$(hb_key_path 2>/dev/null || true)
   [ -s "$SSH_DIR/config" ] && return 0
   # 公开版没有「预设主机列表」：别名由 hb hosts add 维护，ssh 目标走 host_ssh_target。
   # 硬生成一份带 IP 的 config 只会在别人机器上制造垃圾条目。
@@ -530,7 +539,7 @@ ensure_ssh_conf() {
       echo "Host $t"
       echo "    HostName $ip"
       echo "    User ${t%%[0-9]*}"
-      echo "    IdentityFile $SSH_DIR/$SSH_KEY_NAME"
+      echo "    IdentityFile ${_hb_k:-$SSH_DIR/$SSH_KEY_NAME}"
       # 穿隧道只在"本机是 Linux 沙箱"时成立：Windows 侧没有 1055，
       # 那边的连接是直连 tailnet 的。写死 ProxyCommand 会让 Windows 上全超时。
       is_windows || echo "    ProxyCommand $(ssh_proxy_cmd)"
@@ -779,7 +788,7 @@ cmd_hosts() {
       while read -r n t; do
         [ -z "$n" ] && continue
         note=""
-        [ $first -eq 1 ] && { note="  ← 默认（$SELF box 等同于 $SELF $n）"; first=0; }
+        [ $first -eq 1 ] && { note="  ← 默认（不给机器名时就到它）"; first=0; }
         if ! alias_usable "$n"; then note="$note  ✗ 与子命令重名，会被忽略"; fi
         printf '  %-10s → %-16s%s\n' "$n" "$t" "$note"
       done <<< "$(hosts_all)"
@@ -816,14 +825,15 @@ hosts_remember() {
 
 # 给某台机器补一条 ssh Host（幂等；已有同名 Host 就不动）
 ssh_alias_ensure() {
-  local n=$1 ip=$2 cfg="$SSH_DIR/config"
+  local n=$1 ip=$2 cfg="$SSH_DIR/config" _hb_k
+  _hb_k=$(hb_key_path 2>/dev/null || true)
   [ -s "$cfg" ] || return 0
   grep -qiE "^[[:space:]]*Host[[:space:]]+.*\b$n\b" "$cfg" && return 0
   {
     echo
     echo "Host $n"
     echo "    HostName $ip"
-    echo "    IdentityFile $SSH_DIR/$SSH_KEY_NAME"
+    echo "    IdentityFile ${_hb_k:-$SSH_DIR/$SSH_KEY_NAME}"
     is_windows || echo "    ProxyCommand $(ssh_proxy_cmd)"
     echo "    ServerAliveInterval 15"
     echo "    StrictHostKeyChecking accept-new"
@@ -1619,9 +1629,12 @@ cmd_run() {
     # 先直连试一次，再穿隧道。理由：真机（Jetson、box）是内核 tun，
     # 直连本来就能通且更快；沙箱是用户态，直连秒失败再回落到代理，
     # 代价只有一次极短的失败。反过来（只走代理）会把两端都拖慢。
-    set -- -o "ProxyCommand=$(ssh_proxy_cmd)" \
-           -o "IdentityFile=$SSH_DIR/$SSH_KEY_NAME" \
-           -o "User=$ssh_user" "$@"
+    local _hb_key=""
+    _hb_key=$(hb_key_path 2>/dev/null) || _hb_key=""
+    set -- -o "ProxyCommand=$(ssh_proxy_cmd)" -o "User=$ssh_user" "$@"
+    # 有钥才显式指定：显式给了 IdentityFile，ssh 就不再尝试默认私钥 ——
+    # 所以宁可漏传，也不能传空变量拼出来的 "/"（那会报 Load key "/": Is a directory）。
+    [ -n "$_hb_key" ] && set -- -o "IdentityFile=$_hb_key" "$@"
   fi
 
   # 解析到哪台要说出来，但不占 stdout：stdout 是远端命令的输出，被一行提示
@@ -3408,6 +3421,7 @@ for _al in "${HB_ALIASES[@]}"; do
 done
 
 case "$1" in
+  -h|--help|help) show_help; exit 0 ;;
   -*) show_help; exit 2 ;;
 esac
 

@@ -74,6 +74,14 @@ HB_HOME=$(CDPATH= cd -- "$(dirname -- "$HB_SELF")" 2>/dev/null && pwd)
 # 安装目录可能只读，状态得有个可写的地方。
 HB_STATE_DIR="${HB_STATE_DIR:-$HOME/.hb}"
 
+# ~/.ssh 与私钥名：**必须在这里赋值**。
+# 2026-11-16 冷启动实测：这两个变量跟着被删掉的载荷模块一起消失了，
+# 于是 -o IdentityFile=$SSH_DIR/$SSH_KEY_NAME 变成 -o IdentityFile=/，
+# ssh 报 "Load key "/": Is a directory" + Permission denied ——
+# 而 hb 自己的诊断说"账号不对/公钥没埋"，把方向指到了远端。空变量不报错，最难查。
+SSH_DIR="${HB_SSH_DIR:-$HOME/.ssh}"
+SSH_KEY_NAME="${HB_SSH_KEY:-id_ed25519}"
+
 # ══════ 命令表（唯一来源）══════════════════════════════════════════════
 # 帮助文本、子命令分发、重名检查都读这一张表。加一个命令只改这里一处。
 # 格式：名字|处理函数|一句话

@@ -558,9 +558,12 @@ cmd_run() {
     # 先直连试一次，再穿隧道。理由：真机（Jetson、box）是内核 tun，
     # 直连本来就能通且更快；沙箱是用户态，直连秒失败再回落到代理，
     # 代价只有一次极短的失败。反过来（只走代理）会把两端都拖慢。
-    set -- -o "ProxyCommand=$(ssh_proxy_cmd)" \
-           -o "IdentityFile=$SSH_DIR/$SSH_KEY_NAME" \
-           -o "User=$ssh_user" "$@"
+    local _hb_key=""
+    _hb_key=$(hb_key_path 2>/dev/null) || _hb_key=""
+    set -- -o "ProxyCommand=$(ssh_proxy_cmd)" -o "User=$ssh_user" "$@"
+    # 有钥才显式指定：显式给了 IdentityFile，ssh 就不再尝试默认私钥 ——
+    # 所以宁可漏传，也不能传空变量拼出来的 "/"（那会报 Load key "/": Is a directory）。
+    [ -n "$_hb_key" ] && set -- -o "IdentityFile=$_hb_key" "$@"
   fi
 
   # 解析到哪台要说出来，但不占 stdout：stdout 是远端命令的输出，被一行提示

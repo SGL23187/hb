@@ -2,6 +2,7 @@
 #
 ensure_ssh_conf() {
   mkdir -p "$SSH_DIR"; chmod 700 "$SSH_DIR"
+  local _hb_k; _hb_k=$(hb_key_path 2>/dev/null || true)
   [ -s "$SSH_DIR/config" ] && return 0
   # 公开版没有「预设主机列表」：别名由 hb hosts add 维护，ssh 目标走 host_ssh_target。
   # 硬生成一份带 IP 的 config 只会在别人机器上制造垃圾条目。
@@ -17,7 +18,7 @@ ensure_ssh_conf() {
       echo "Host $t"
       echo "    HostName $ip"
       echo "    User ${t%%[0-9]*}"
-      echo "    IdentityFile $SSH_DIR/$SSH_KEY_NAME"
+      echo "    IdentityFile ${_hb_k:-$SSH_DIR/$SSH_KEY_NAME}"
       # 穿隧道只在"本机是 Linux 沙箱"时成立：Windows 侧没有 1055，
       # 那边的连接是直连 tailnet 的。写死 ProxyCommand 会让 Windows 上全超时。
       is_windows || echo "    ProxyCommand $(ssh_proxy_cmd)"
@@ -266,7 +267,7 @@ cmd_hosts() {
       while read -r n t; do
         [ -z "$n" ] && continue
         note=""
-        [ $first -eq 1 ] && { note="  ← 默认（$SELF box 等同于 $SELF $n）"; first=0; }
+        [ $first -eq 1 ] && { note="  ← 默认（不给机器名时就到它）"; first=0; }
         if ! alias_usable "$n"; then note="$note  ✗ 与子命令重名，会被忽略"; fi
         printf '  %-10s → %-16s%s\n' "$n" "$t" "$note"
       done <<< "$(hosts_all)"
@@ -303,14 +304,15 @@ hosts_remember() {
 
 # 给某台机器补一条 ssh Host（幂等；已有同名 Host 就不动）
 ssh_alias_ensure() {
-  local n=$1 ip=$2 cfg="$SSH_DIR/config"
+  local n=$1 ip=$2 cfg="$SSH_DIR/config" _hb_k
+  _hb_k=$(hb_key_path 2>/dev/null || true)
   [ -s "$cfg" ] || return 0
   grep -qiE "^[[:space:]]*Host[[:space:]]+.*\b$n\b" "$cfg" && return 0
   {
     echo
     echo "Host $n"
     echo "    HostName $ip"
-    echo "    IdentityFile $SSH_DIR/$SSH_KEY_NAME"
+    echo "    IdentityFile ${_hb_k:-$SSH_DIR/$SSH_KEY_NAME}"
     is_windows || echo "    ProxyCommand $(ssh_proxy_cmd)"
     echo "    ServerAliveInterval 15"
     echo "    StrictHostKeyChecking accept-new"

@@ -142,6 +142,22 @@ section 'enroll 自测要能分辨"本机被劫持"（2026-11-16）'
 grep -q '198.18\.\*|198.19\.\*' hb && ok '有 fake-ip 段的短路判据' || bad '没有 fake-ip 判据'
 grep -q '_enroll_peer_code' hb && ok '能借别的节点代验' || bad '没有节点代验'
 
+section '加载期变量必须已定义（冷启动实测踩过）'
+# 事故（2026-11-16，陌生人冷启动）：SSH_DIR / SSH_KEY_NAME 在重构中丢了赋值，
+# 于是 -o IdentityFile=$SSH_DIR/$SSH_KEY_NAME 变成 -o IdentityFile=/，
+# ssh 报 Load key "/": Is a directory + Permission denied，而 hb 的诊断
+# 把原因说成"账号不对/公钥没埋"—— 方向指到了远端。空变量不报错，最难查。
+grep -qE '^SSH_DIR=' hb && ok 'SSH_DIR 在加载时就赋值' || bad 'SSH_DIR 未赋值'
+grep -qE '^SSH_KEY_NAME=' hb && ok 'SSH_KEY_NAME 在加载时就赋值' || bad 'SSH_KEY_NAME 未赋值'
+# 只看代码行：头注释里写着这个反例（解释为什么要改），不该被算作违规
+grep -v '^[[:space:]]*#' hb | grep -q 'IdentityFile=\$SSH_DIR'   && bad '执行路径仍在拼空变量（会变成 IdentityFile=/）'   || ok '执行路径不再直接拼 $SSH_DIR/$SSH_KEY_NAME'
+grep -q '_hb_key=\$(hb_key_path' hb && ok '执行路径先解析出真实私钥' || bad '执行路径没走 hb_key_path'
+
+section '自助入口不该被报成失败'
+./hb --help >/dev/null 2>&1; assert_rc '--help 返回 0' "$?" 0
+./hb help   >/dev/null 2>&1; assert_rc 'hb help 返回 0' "$?" 0
+grep -q '等同于' hb && bad '别名提示里还有"X 等同于 X"这种废话' || ok '别名提示文案正常'
+
 if [ $ONLINE -eq 1 ]; then
   section '联网用例（可选）'
   OUT=$(./hb minas 'id -u' 2>/dev/null); RC=$?
