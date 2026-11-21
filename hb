@@ -1589,6 +1589,7 @@ cmd_run() {
   # 节点名 → IP：`hb yahboom8 "uptime"` 能直接用，不必先查 IP 再记别名。
   # 注意先定 sshr，再判 IP —— 顺序反了会让节点名这条路悄悄退化成裸 ssh。
   local sshr="$name"
+  local -a SO=()      # ssh 选项统一收在这里，必须全部排在 host 之前
   if [ $hit_node -eq 1 ] && [ $hit_cfg -eq 0 ]; then
     local ip; ip=$(printf '%s\n' "$nodes" | awk -F'\t' -v n="$name" '$1==n{print $2; exit}')
     [ -n "$ip" ] && { host=$ip; sshr=$name; }
@@ -1614,6 +1615,11 @@ cmd_run() {
     # 看着像"密钥没授权"，实际只是用了别人的账号（实测踩过一次）。
     local ssh_user="" pref
     ssh_user="$host_user"
+    # IP 目标也要能拿到账号：hosts 表里可能早就有一条指向它的别名
+    # （`hb hosts add yahboom 100.65.80.63 user=jetson` 留下的）。有就抄。
+    # 2026-11-21 实测 `hb 100.65.80.63` 猜成 box → Permission denied，
+    # 看着像密钥没授权，实际只是账号错 —— 又一个"判据指错方向"。
+    [ -n "$ssh_user" ] || ssh_user=$(hosts_all 2>/dev/null | awk -v ip="$host" '$2==ip{for(i=3;i<=NF;i++) if ($i ~ /^user=/) { sub(/^user=/,"",$i); print $i; exit }}')
     [ -n "$ssh_user" ] || ssh_user=$(awk -v ip="$host" '
       tolower($1)=="host"              { h=$2; u=""; next }
       tolower($1)=="hostname" && $2==ip { hh=h; next }
@@ -1632,10 +1638,17 @@ cmd_run() {
     # 代价只有一次极短的失败。反过来（只走代理）会把两端都拖慢。
     local _hb_key=""
     _hb_key=$(hb_key_path 2>/dev/null) || _hb_key=""
-    set -- -o "ProxyCommand=$(ssh_proxy_cmd)" -o "User=$ssh_user" "$@"
+    SO+=(-o "User=$ssh_user")
+    # ProxyCommand 只在「本机没有内核 tun」时才需要 —— 用户态沙箱直连必失败，
+    # 才走 SOCKS/tailscale nc 兜底。Windows/macOS/真机 Linux 都有 tun，
+    # 直连更快；硬加 ProxyCommand 反而会挂：Windows 上 `tailscale nc` 至今不可用，
+    # ssh 收到空连接直接 `Connection closed by UNKNOWN port 65535`（2026-11-21 实测）。
+    if ! port_open "$host" 22 2; then
+      SO+=(-o "ProxyCommand=$(ssh_proxy_cmd)")
+    fi
     # 有钥才显式指定：显式给了 IdentityFile，ssh 就不再尝试默认私钥 ——
     # 所以宁可漏传，也不能传空变量拼出来的 "/"（那会报 Load key "/": Is a directory）。
-    [ -n "$_hb_key" ] && set -- -o "IdentityFile=$_hb_key" "$@"
+    [ -n "$_hb_key" ] && SO+=(-o "IdentityFile=$_hb_key")
   fi
 
   # 解析到哪台要说出来，但不占 stdout：stdout 是远端命令的输出，被一行提示
@@ -1656,7 +1669,7 @@ cmd_run() {
   # ssh 自己会重试，但"失败"必须带上诊断 —— 否则调用者只拿到 exit 255，
   # 得自己去猜是隧道、私钥还是对端没开机。
   local rc=0
-  ssh -o BatchMode=yes "$host" "$@" || rc=$?
+  ssh -o BatchMode=yes ${SO[@]+"${SO[@]}"} "$host" "$@" || rc=$?
   [ $rc -eq 255 ] && hb_diagnose "$host" 255
   return $rc
 }
